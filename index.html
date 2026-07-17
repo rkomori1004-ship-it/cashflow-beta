@@ -1,0 +1,4235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CF管理β — キャッシュフロー（β版）</title>
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="CF管理">
+<meta name="theme-color" content="#0a0a1a">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Press+Start+2P&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+<style>
+/* ===== DQ THEME ===== */
+:root {
+  --bg: #0a0a1a;
+  --bg2: #0d0d2b;
+  --win: #1a1a6e;
+  --win-light: #2222a0;
+  --border: #6666ff;
+  --border-bright: #aaaaff;
+  --text: #ffffff;
+  --text-muted: #aaaadd;
+  --text-hint: #6666aa;
+  --gold: #ffdd44;
+  --gold-dark: #cc9900;
+  --green: #44ff88;
+  --green-bg: rgba(68,255,136,0.12);
+  --green-light: #22cc66;
+  --red: #ff4444;
+  --red-bg: rgba(255,68,68,0.12);
+  --red-light: #cc2222;
+  --mp: #4488ff;
+  --mono: 'DotGothic16', monospace;
+  --sans: 'DotGothic16', monospace;
+  --radius: 0px;
+  --radius-sm: 0px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; image-rendering: pixelated; }
+
+body {
+  font-family: 'DotGothic16', monospace;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 14px;
+  line-height: 1.8;
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(34,34,160,0.3) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 20%, rgba(68,68,200,0.2) 0%, transparent 50%);
+}
+
+/* サブメニューボタン */
+.sub-menu-btn {
+  background: var(--win); border: 3px solid var(--border-bright);
+  color: var(--gold); font-size: 16px; width: 36px; height: 36px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.1s; font-family: monospace;
+}
+.sub-menu-btn:hover { background: var(--win-light); }
+.sub-menu-btn.active { background: var(--win-light); color: #fff; }
+
+/* サブメニュードロップダウン */
+.sub-menu {
+  display: none; flex-direction: column;
+  position: absolute; right: 16px; top: 80px; z-index: 999;
+  background: #0d0d35; border: 3px solid var(--border-bright);
+  outline: 1px solid var(--border); min-width: 160px;
+  box-shadow: 6px 6px 0 #000;
+}
+.sub-menu.open { display: flex; }
+.sub-menu-item {
+  padding: 12px 18px; font-size: 13px; cursor: pointer;
+  color: var(--text); border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+.sub-menu-item:last-child { border-bottom: none; }
+.sub-menu-item:hover { background: var(--win-light); color: var(--gold); }
+
+/* レベルバッジ */
+.level-badge {
+  background: var(--win); border: 3px solid var(--gold);
+  color: var(--gold); font-size: 11px; padding: 6px 10px;
+  cursor: pointer; display: flex; align-items: center; gap: 5px;
+  transition: all 0.1s; white-space: nowrap;
+  text-shadow: 1px 1px 0 var(--gold-dark);
+}
+.level-badge:hover { background: var(--win-light); }
+
+/* 報酬リスト */
+.reward-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; margin-bottom: 8px;
+  border: 2px solid var(--border); background: #0d0d35;
+  transition: all 0.15s;
+}
+.reward-item.unlocked { border-color: var(--gold); background: #1a1500; }
+.reward-item.locked { opacity: 0.5; }
+.reward-icon { font-size: 22px; width: 30px; text-align: center; }
+.reward-body { flex: 1; }
+.reward-lv { font-size: 10px; color: var(--text-hint); }
+.reward-name { font-size: 13px; color: var(--text); }
+.reward-item.unlocked .reward-name { color: var(--gold); }
+.reward-status { font-size: 10px; padding: 3px 8px; border: 1px solid; white-space: nowrap; }
+.reward-status.ok { color: var(--green); border-color: var(--green); }
+.reward-status.lock { color: var(--text-hint); border-color: var(--text-hint); }
+
+/* XPバー */
+.xp-bar-bg { background: #0a0a2a; border: 2px solid var(--border-bright); height: 18px; margin: 8px 0; }
+.xp-bar { height: 14px; margin: 2px; background: var(--gold); box-shadow: 0 0 8px rgba(255,220,68,0.5); transition: width 0.4s; }
+
+/* レベルアップ演出 */
+/* アンドゥトースト */
+.undo-toast {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  background: var(--win); border: 3px solid var(--gold);
+  padding: 12px 16px; display: none; align-items: center; gap: 14px;
+  z-index: 1001; box-shadow: 4px 4px 0 #000; max-width: 90vw;
+}
+.undo-toast.show { display: flex; animation: fadeIn 0.2s; }
+.undo-toast-text { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.undo-toast-btn {
+  background: var(--win-light); border: 2px solid var(--gold); color: var(--gold);
+  padding: 6px 12px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  font-family: 'DotGothic16', monospace;
+}
+.undo-toast-btn:hover { background: #3333cc; }
+
+.levelup-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.75);
+  align-items: center; justify-content: center;
+}
+.levelup-overlay.open { display: flex; animation: fadeIn 0.2s; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* 買っていい？チェック */
+.purchase-verdict {
+  padding: 16px; margin-top: 8px;
+  border: 3px solid; text-align: center;
+}
+.purchase-verdict.go { border-color: var(--green); background: #001a0d; }
+.purchase-verdict.caution { border-color: var(--gold); background: #1a1500; }
+.purchase-verdict.stop { border-color: var(--red); background: #1a0000; }
+.purchase-verdict-title {
+  font-family: 'Press Start 2P', monospace; font-size: 13px;
+  margin-bottom: 10px;
+}
+.purchase-verdict.go .purchase-verdict-title { color: var(--green); }
+.purchase-verdict.caution .purchase-verdict-title { color: var(--gold); }
+.purchase-verdict.stop .purchase-verdict-title { color: var(--red); }
+.purchase-verdict-reasons { text-align: left; font-size: 12px; color: var(--text-muted); line-height: 1.9; }
+
+.levelup-box {
+  background: var(--win); border: 5px solid var(--gold);
+  outline: 2px solid var(--border-bright); outline-offset: -9px;
+  padding: 30px 26px; text-align: center; max-width: 320px;
+  animation: popIn 0.3s;
+}
+@keyframes popIn { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.levelup-title {
+  font-family: 'Press Start 2P', monospace; font-size: 14px;
+  color: var(--gold); text-shadow: 2px 2px 0 var(--gold-dark);
+  margin-bottom: 14px;
+}
+.levelup-lv { font-size: 32px; color: #fff; margin-bottom: 6px; font-family: 'Press Start 2P', monospace; }
+.levelup-name { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+.levelup-reward { font-size: 14px; color: var(--green); padding: 10px; border: 2px solid var(--green); background: #001a0d; margin-bottom: 18px; }
+.levelup-close {
+  padding: 10px 24px; border: 3px solid var(--border-bright);
+  background: var(--win-light); color: #fff; cursor: pointer;
+  font-family: 'DotGothic16', monospace; font-size: 13px;
+}
+.levelup-close:hover { background: #3333cc; }
+
+/* ︙ Context Menu */
+.ctx-menu {
+  position: fixed; z-index: 9999;
+  background: #0d0d35;
+  border: 3px solid var(--border-bright);
+  outline: 1px solid var(--border);
+  min-width: 140px;
+  display: none;
+  flex-direction: column;
+  box-shadow: 4px 4px 0 #000;
+}
+.ctx-menu.open { display: flex; }
+.ctx-item {
+  padding: 10px 16px; font-size: 13px; cursor: pointer;
+  color: var(--text); border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+  display: flex; align-items: center; gap: 8px;
+}
+.ctx-item:last-child { border-bottom: none; }
+.ctx-item:hover { background: var(--win-light); color: var(--gold); }
+.ctx-item.danger:hover { background: #330000; color: var(--red); }
+
+/* Edit Modal */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(0,0,0,0.8);
+  display: none; align-items: center; justify-content: center; padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--win);
+  border: 4px solid var(--border-bright);
+  outline: 2px solid var(--border);
+  padding: 24px; width: 100%; max-width: 460px;
+  box-shadow: 8px 8px 0 #000;
+}
+.modal-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px; color: var(--gold);
+  text-shadow: 1px 1px 0 var(--gold-dark);
+  margin-bottom: 18px;
+}
+.modal-field { margin-bottom: 12px; }
+.modal-field label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.modal-actions { display: flex; gap: 8px; margin-top: 18px; justify-content: flex-end; }
+.modal-btn {
+  padding: 8px 18px; border: 2px solid; cursor: pointer;
+  font-family: 'DotGothic16', monospace; font-size: 13px; transition: all 0.1s;
+}
+.modal-btn.primary { border-color: var(--green); color: var(--green); background: #001a0d; }
+.modal-btn.primary:hover { background: var(--green); color: #000; }
+.modal-btn.cancel { border-color: var(--text-hint); color: var(--text-muted); background: transparent; }
+.modal-btn.cancel:hover { border-color: var(--text); color: var(--text); }
+
+/* 口座引き落としバッジ */
+.acc-badge { font-size: 10px; padding: 1px 6px; border: 1px solid var(--mp); color: var(--mp); background: rgba(68,136,255,0.1); white-space: nowrap; }
+
+/* DQ Window mixin */
+.dq-win {
+  background: var(--win);
+  border: 4px solid var(--border-bright);
+  outline: 2px solid var(--border);
+  outline-offset: -6px;
+  padding: 16px 18px;
+  position: relative;
+}
+
+/* Layout */
+.app { max-width: 860px; margin: 0 auto; padding: 20px 16px 80px; }
+
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px; flex-wrap: wrap; gap: 8px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 16px;
+}
+.logo {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 13px;
+  color: var(--gold);
+  text-shadow: 2px 2px 0 var(--gold-dark), 0 0 20px rgba(255,220,68,0.5);
+  letter-spacing: 1px;
+  display: flex; align-items: center; gap: 10px;
+}
+.logo-icon { font-size: 20px; }
+.logo span { color: #fff; }
+.header-sub { font-size: 11px; color: var(--text-hint); }
+
+/* Tabs */
+.tabs {
+  display: flex; gap: 0;
+  border: 3px solid var(--border-bright);
+  outline: 1px solid var(--border);
+  margin-bottom: 20px;
+  overflow-x: auto; scrollbar-width: none;
+  background: #0e0e40;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex-shrink: 0; padding: 8px 14px;
+  border: none; border-right: 2px solid var(--border);
+  font-family: 'DotGothic16', monospace;
+  font-size: 12px; cursor: pointer;
+  background: transparent; color: var(--text-muted);
+  transition: all 0.1s; white-space: nowrap;
+}
+.tab:last-child { border-right: none; }
+.tab:hover { background: var(--win-light); color: var(--text); }
+.tab.active {
+  background: var(--win);
+  color: var(--gold);
+  text-shadow: 0 0 8px rgba(255,220,68,0.6);
+}
+.tab.active::before { content: '▶ '; }
+.section { display: none; }
+.section.active { display: block; }
+
+/* Month nav */
+.month-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.month-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px; flex: 1; color: var(--gold);
+  text-shadow: 1px 1px 0 var(--gold-dark);
+}
+.nav-btn {
+  width: 32px; height: 32px;
+  border: 3px solid var(--border-bright);
+  background: var(--win); cursor: pointer;
+  font-size: 14px; display: flex; align-items: center; justify-content: center;
+  color: var(--text); transition: all 0.1s; font-family: monospace;
+}
+.nav-btn:hover { background: var(--win-light); color: var(--gold); }
+
+/* Metrics — HP/MP風 */
+.metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.metric {
+  background: var(--win);
+  border: 3px solid var(--border-bright);
+  outline: 1px solid var(--border);
+  padding: 12px 14px;
+}
+.metric-label {
+  font-size: 10px; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px;
+}
+.metric-value {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px; font-weight: normal; letter-spacing: 0;
+}
+.metric-value.pos { color: var(--green); text-shadow: 0 0 8px rgba(68,255,136,0.5); }
+.metric-value.neg { color: var(--red); text-shadow: 0 0 8px rgba(255,68,68,0.5); }
+
+/* Cards = DQウィンドウ */
+.card {
+  background: var(--win);
+  border: 4px solid var(--border-bright);
+  outline: 2px solid var(--border);
+  outline-offset: -7px;
+  padding: 16px 18px;
+  margin-bottom: 12px;
+  position: relative;
+}
+.card-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px; color: var(--gold);
+  text-shadow: 1px 1px 0 var(--gold-dark);
+  margin-bottom: 14px; letter-spacing: 1px;
+}
+
+/* Form */
+.form-grid { display: grid; gap: 8px; align-items: end; }
+.form-grid.inc-grid { grid-template-columns: 1fr 1.4fr 1.1fr 1.1fr auto; }
+.form-grid.exp-grid { grid-template-columns: 1fr 1.4fr 1.1fr 1.1fr auto; }
+.form-grid.biz-grid { grid-template-columns: 1fr 1.4fr 1.1fr 1fr 0.9fr auto; }
+.form-grid.biz-grid-acc { grid-template-columns: 1fr 1.2fr 0.9fr 0.9fr 0.8fr 1fr 1.1fr auto; }
+.form-grid.biz-exp-grid { grid-template-columns: 1fr 1.4fr 1.2fr 1.2fr auto; }
+.form-grid.exp-acc-grid { grid-template-columns: 1fr 1.3fr 1fr 1fr 1fr 0.7fr auto auto; }
+.checkbox-field { display: flex; flex-direction: column; align-items: flex-start; }
+.checkbox-field label { margin-bottom: 6px; }
+.checkbox-field input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--green); cursor: pointer; }
+.form-grid.unpaid-grid { grid-template-columns: 0.8fr 1fr 0.8fr 0.9fr 0.9fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 12px; }
+
+.csv-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  border: 3px solid var(--border-bright);
+  background: var(--win-light); color: var(--gold);
+  font-size: 11px; cursor: pointer;
+  font-family: 'DotGothic16', monospace;
+  transition: all 0.1s;
+}
+.csv-btn:hover { background: #3333cc; }
+
+.field label {
+  display: block; font-size: 11px; color: var(--text-muted);
+  margin-bottom: 4px;
+}
+input, select {
+  width: 100%; padding: 7px 10px;
+  font-size: 13px; font-family: 'DotGothic16', monospace;
+  border: 2px solid var(--border);
+  background: #0a0a2a; color: var(--text);
+  outline: none; transition: border-color 0.15s;
+}
+input:focus, select:focus {
+  border-color: var(--gold);
+  background: #0d0d35;
+  box-shadow: 0 0 8px rgba(255,220,68,0.2);
+}
+select option { background: #0d0d35; }
+
+.add-btn {
+  height: 36px; width: 36px;
+  border: 3px solid var(--border-bright);
+  cursor: pointer; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.1s; margin-top: 16px;
+  font-family: monospace;
+}
+.add-btn.green { background: #003322; color: var(--green); border-color: var(--green); }
+.add-btn.green:hover { background: #005533; box-shadow: 0 0 8px rgba(68,255,136,0.4); }
+.add-btn.red { background: #330000; color: var(--red); border-color: var(--red); }
+.add-btn.red:hover { background: #550000; box-shadow: 0 0 8px rgba(255,68,68,0.4); }
+
+.form-divider { border: none; border-top: 2px solid var(--border); margin: 14px 0; }
+
+/* Progress bar */
+.progress-wrap { margin-bottom: 14px; }
+.progress-label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
+.progress-bar-bg { background: #0a0a2a; border: 2px solid var(--border); height: 14px; overflow: hidden; }
+
+/* メイン目標ゲージバナー */
+.main-gauge-banner {
+  max-width: 860px; margin: 0 auto 16px; padding: 14px 20px;
+  background: linear-gradient(135deg, #1a1500 0%, #0a0a2a 100%);
+  border: 3px solid var(--gold); font-family: 'DotGothic16', monospace;
+}
+.main-gauge-title { font-size: 11px; color: var(--gold); letter-spacing: 1px; margin-bottom: 8px; }
+.main-gauge-ascii {
+  font-family: 'DM Mono', monospace; font-size: 13px; line-height: 1.6;
+  color: var(--gold); white-space: pre; overflow-x: auto;
+}
+.main-gauge-numbers { font-size: 15px; color: #fff; margin: 4px 0; font-family: var(--mono); }
+.main-gauge-remaining { font-size: 12px; color: var(--text-muted); }
+.main-gauge-projection {
+  margin-top: 10px; padding-top: 10px; border-top: 2px solid var(--border);
+  font-size: 12px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px;
+}
+.gauge-scenario-toggle {
+  display: flex; align-items: center; gap: 6px; font-size: 11px;
+  padding: 4px 8px; border: 1px solid var(--border); cursor: pointer;
+  background: #0d0d35; color: var(--text-muted);
+}
+.gauge-scenario-toggle.on { border-color: var(--green); color: var(--green); background: #001a0d; }
+.gauge-scenario-toggle input { width: 14px; height: 14px; accent-color: var(--green); }
+
+.progress-bar { height: 10px; margin: 2px; transition: width 0.4s; }
+.progress-bar.ok { background: var(--green); box-shadow: 0 0 6px rgba(68,255,136,0.5); }
+.progress-bar.warn { background: var(--gold); box-shadow: 0 0 6px rgba(255,220,68,0.5); }
+.progress-bar.over { background: var(--red); box-shadow: 0 0 6px rgba(255,68,68,0.5); }
+
+/* Entry list */
+.entry-list { display: flex; flex-direction: column; gap: 3px; max-height: 280px; overflow-y: auto; }
+.entry-list:empty::after {
+  content: 'きろくがありません'; display: block;
+  text-align: center; color: var(--text-hint); font-size: 12px; padding: 20px 0;
+}
+.entry {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  background: #0d0d35;
+  border: 1px solid var(--border);
+  transition: all 0.1s;
+}
+.entry:hover { border-color: var(--gold); background: #12124a; }
+.entry-cat {
+  font-size: 9px; padding: 2px 6px;
+  border: 1px solid; font-weight: normal; white-space: nowrap;
+}
+.cat-inc { border-color: var(--green); color: var(--green); background: #001a0d; }
+.cat-exp { border-color: var(--red); color: var(--red); background: #1a0000; }
+.entry-name { flex: 1; font-size: 12px; color: var(--text); }
+.entry-status { font-size: 9px; padding: 1px 5px; border: 1px solid; margin-left: 4px; }
+.status-done { color: var(--green); border-color: var(--green); }
+.status-pending { color: var(--gold); border-color: var(--gold); }
+.status-billed { color: var(--mp); border-color: var(--mp); }
+.entry-amount { font-family: 'DotGothic16', monospace; font-size: 12px; white-space: nowrap; }
+.entry-amount.inc { color: var(--green); }
+.entry-amount.exp { color: var(--red); }
+.del-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-hint); font-size: 14px; padding: 2px 4px; line-height: 1;
+  transition: all 0.1s;
+}
+.del-btn:hover { color: var(--red); text-shadow: 0 0 6px rgba(255,68,68,0.6); }
+
+/* Chart */
+.chart-wrap { position: relative; height: 200px; margin-top: 4px; }
+
+/* Overview */
+.overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+.summary-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.summary-table tr { border-bottom: 1px solid var(--border); }
+.summary-table tr:last-child { border-bottom: none; }
+.summary-table td { padding: 8px 4px; }
+.summary-table td:last-child { text-align: right; font-family: 'DotGothic16', monospace; }
+.summary-table .total-row td { color: var(--gold); font-size: 13px; padding-top: 10px; }
+
+/* Legend */
+.legend { display: flex; gap: 14px; margin-bottom: 8px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text-muted); }
+.legend-dot { width: 10px; height: 10px; }
+
+/* Empty */
+.empty { text-align: center; padding: 28px; color: var(--text-hint); font-size: 12px; }
+
+/* Reminder banner */
+.reminder-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: #2a2000;
+  border: 3px solid var(--gold);
+  padding: 12px 16px; margin-bottom: 14px; flex-wrap: wrap;
+}
+.reminder-text { font-size: 12px; color: var(--gold); flex: 1; }
+.reminder-text strong { color: #fff; }
+.reminder-close { background: none; border: none; cursor: pointer; color: var(--gold); font-size: 18px; line-height: 1; padding: 0 2px; }
+.reminder-nospend-btn {
+  background: var(--win-light); border: 2px solid var(--green);
+  color: var(--green); font-size: 11px; padding: 6px 10px;
+  cursor: pointer; white-space: nowrap; font-family: 'DotGothic16', monospace;
+  transition: all 0.1s;
+}
+.reminder-nospend-btn:hover { background: #003322; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); }
+
+/* Mobile */
+@media (max-width: 600px) {
+  .metrics { grid-template-columns: 1fr 1fr; }
+  .metrics .metric:last-child { grid-column: span 2; }
+  .form-grid.inc-grid, .form-grid.exp-grid, .form-grid.exp-acc-grid, .form-grid.unpaid-grid { grid-template-columns: 1fr 1fr; }
+  .form-grid.inc-grid .add-btn, .form-grid.exp-grid .add-btn, .form-grid.exp-acc-grid .add-btn, .form-grid.unpaid-grid .add-btn { grid-column: span 2; width: 100%; }
+  .form-grid.biz-grid, .form-grid.biz-grid-acc { grid-template-columns: 1fr 1fr; }
+  .form-grid.biz-grid .add-btn, .form-grid.biz-grid-acc .add-btn { grid-column: span 2; width: 100%; }
+  .overview-grid { grid-template-columns: 1fr; }
+  .logo { font-size: 10px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">
+      <span class="logo-icon">🪙</span>
+      キャッシュフロー<span>管理β</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="header-sub" id="today-label"></div>
+      <button class="sub-menu-btn" onclick="openPurchaseCheckModal()" title="買っていい？チェック" style="border-color:var(--gold);color:var(--gold)">🏪</button>
+      <button class="sub-menu-btn" onclick="openSearchModal()" title="過去の支出を検索" style="border-color:var(--mp);color:var(--mp)">🔍</button>
+      <div class="level-badge" id="level-badge" onclick="switchTab('level')" title="レベル画面へ"></div>
+      <button class="sub-menu-btn" onclick="toggleSubMenu()" title="メニュー" id="sub-menu-toggle">☰</button>
+    </div>
+  </header>
+
+  <div id="main-goal-gauge"></div>
+
+  <!-- サブメニュー -->
+  <div id="sub-menu" class="sub-menu">
+    <div class="sub-menu-item" onclick="switchTab('level');toggleSubMenu()">⭐ レベル・ごほうび</div>
+    <div class="sub-menu-item" onclick="switchTab('overview');toggleSubMenu()">📊 そうごう</div>
+    <div class="sub-menu-item" onclick="switchTab('annual');toggleSubMenu()">📅 ねんかん</div>
+    <div class="sub-menu-item" onclick="switchTab('budget');toggleSubMenu()">🎯 もくひょう</div>
+    <div class="sub-menu-item" onclick="switchTab('backup');toggleSubMenu()">💾 セーブ</div>
+  </div>
+
+  <div id="reminder-banner" style="display:none" class="reminder-banner">
+    <span class="reminder-text">⚔ <strong>まだ　きょうの　きろくが　のこっています。</strong>　ねるまえに　にゅうりょくしますか？</span>
+    <button class="reminder-nospend-btn" onclick="logNoSpendDay()" title="今日は何も使わなかった">💤 今日は無支出</button>
+    <button class="reminder-close" onclick="dismissReminder()" title="今日は閉じる">×</button>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('personal')">🏠 家計</button>
+    <button class="tab" onclick="switchTab('business')">💼 仕事</button>
+    <button class="tab" onclick="switchTab('balance')">🪙 残高・負債</button>
+  </div>
+
+  <!-- 個人・家計 -->
+  <div id="tab-personal" class="section active">
+    <div class="month-nav">
+      <button class="nav-btn" onclick="changeMonth('personal',-1)">‹</button>
+      <div class="month-label" id="personal-month-label"></div>
+      <button class="nav-btn" onclick="changeMonth('personal',1)">›</button>
+    </div>
+    <div class="metrics" id="personal-metrics"></div>
+    <div id="daily-allowance-card"></div>
+    <div class="card">
+      <div class="card-title">収入を追加</div>
+      <div class="form-grid exp-acc-grid">
+        <div class="field"><label>発生日</label><input id="p-inc-date" type="date" onkeydown="if(event.key==='Enter')addEntry('personal','income')"></div>
+        <div class="field"><label>内容</label><input id="p-inc-name" list="p-inc-namelist" placeholder="給与、副業など" onkeydown="if(event.key==='Enter')addEntry('personal','income')"></div>
+        <datalist id="p-inc-namelist"></datalist>
+        <div class="field"><label>金額（円）</label><input id="p-inc-amount" type="number" placeholder="300000" onkeydown="if(event.key==='Enter')addEntry('personal','income')"></div>
+        <div class="field"><label>カテゴリ</label>
+          <select id="p-inc-cat">
+            <option>給与</option><option>ボーナス</option><option>副業</option><option>利息・配当</option><option>その他収入</option>
+          </select>
+        </div>
+        <div class="field"><label>入金先</label>
+          <select id="p-inc-account"></select>
+        </div>
+        <button class="add-btn green" onclick="addEntry('personal','income')" title="追加">+</button>
+      </div>
+      <hr class="form-divider">
+      <div class="card-title">支出を追加</div>
+      <div class="form-grid exp-acc-grid">
+        <div class="field"><label>発生日／支払期日</label><input id="p-exp-date" type="date" onkeydown="if(event.key==='Enter')addEntry('personal','expense')"></div>
+        <div class="field"><label>内容</label><input id="p-exp-name" list="p-exp-namelist" placeholder="家賃、食費など" onkeydown="if(event.key==='Enter')addEntry('personal','expense')"></div>
+        <datalist id="p-exp-namelist"></datalist>
+        <div class="field"><label>金額（円）</label><input id="p-exp-amount" type="number" placeholder="80000" oninput="updateAllocHint()" onkeydown="if(event.key==='Enter')addEntry('personal','expense')"></div>
+        <div class="field"><label>カテゴリ</label>
+          <select id="p-exp-cat" onchange="updateAllocHint()">
+            <option>家賃・住宅費</option><option>食費</option><option>光熱費</option><option>交通費</option><option>通信費</option><option>娯楽・外食</option><option>美容・理髪</option><option>医療・保険</option><option>教育</option><option>衣類</option><option>その他</option>
+          </select>
+        </div>
+        <div class="field"><label>支払い方法</label>
+          <select id="p-exp-account"></select>
+        </div>
+        <div class="field checkbox-field"><label>支払済</label><input type="checkbox" id="p-exp-paid" checked></div>
+        <button class="add-btn red" onclick="addEntry('personal','expense')" title="追加">+</button>
+        <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="saveAsTemplate('personal','expense')" title="固定費テンプレとして保存">📌</button>
+      </div>
+      <div id="alloc-hint" style="display:none;margin-top:10px;padding:10px 12px;background:#0d0d35;border:2px solid var(--mp)">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mp);cursor:pointer">
+          <input type="checkbox" id="p-exp-alloc-check" style="width:18px;height:18px;accent-color:var(--mp)" checked>
+          <span id="alloc-hint-text"></span>
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📌 固定費テンプレート</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">よく使う支出をワンタップで追加できます</div>
+      <div class="entry-list" id="personal-templates"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">今月の記録</div>
+      <div class="entry-list" id="personal-entries"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">週次サマリー</div>
+      <div id="personal-weekly"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">収支推移（6ヶ月）</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#5DCAA5"></div>収入</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#F09595"></div>支出</div>
+      </div>
+      <div class="chart-wrap"><canvas id="personal-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- フリーランス -->
+  <div id="tab-business" class="section">
+    <div class="month-nav">
+      <button class="nav-btn" onclick="changeMonth('business',-1)">‹</button>
+      <div class="month-label" id="business-month-label"></div>
+      <button class="nav-btn" onclick="changeMonth('business',1)">›</button>
+    </div>
+    <div class="metrics" id="business-metrics"></div>
+    <div class="card">
+      <div class="card-title">売上を追加</div>
+      <div class="form-grid biz-grid-acc">
+        <div class="field"><label>発生日</label><input id="b-inc-date" type="date" onkeydown="if(event.key==='Enter')addEntry('business','income')"></div>
+        <div class="field"><label>クライアント / 案件名</label><input id="b-inc-name" list="b-inc-namelist" placeholder="案件名" onkeydown="if(event.key==='Enter')addEntry('business','income')"></div>
+        <datalist id="b-inc-namelist"></datalist>
+        <div class="field"><label>金額（円）</label><input id="b-inc-amount" type="number" placeholder="500000" onkeydown="if(event.key==='Enter')addEntry('business','income')"></div>
+        <div class="field"><label>カテゴリ</label>
+          <select id="b-inc-cat">
+            <option>セールス</option><option>人材</option><option>不動産</option><option>イベント</option><option>キッチンカー</option><option>開発・エンジニア</option><option>デザイン</option><option>ライティング</option><option>コンサル</option><option>撮影・動画</option><option>その他売上</option>
+          </select>
+        </div>
+        <div class="field"><label>ステータス</label>
+          <select id="b-inc-status">
+            <option value="0">未請求</option><option value="1">請求済</option><option value="2">入金済</option>
+          </select>
+        </div>
+        <div class="field"><label>入金予定日</label><input id="b-inc-duedate" type="date"></div>
+        <div class="field"><label>入金先</label>
+          <select id="b-inc-account"></select>
+        </div>
+        <button class="add-btn green" onclick="addEntry('business','income')" title="追加">+</button>
+      </div>
+      <hr class="form-divider">
+      <div class="card-title">経費を追加</div>
+      <div class="form-grid exp-acc-grid">
+        <div class="field"><label>発生日／支払期日</label><input id="b-exp-date" type="date" onkeydown="if(event.key==='Enter')addEntry('business','expense')"></div>
+        <div class="field"><label>内容</label><input id="b-exp-name" list="b-exp-namelist" placeholder="経費の内容" onkeydown="if(event.key==='Enter')addEntry('business','expense')"></div>
+        <datalist id="b-exp-namelist"></datalist>
+        <div class="field"><label>金額（円）</label><input id="b-exp-amount" type="number" placeholder="10000" onkeydown="if(event.key==='Enter')addEntry('business','expense')"></div>
+        <div class="field"><label>カテゴリ</label>
+          <select id="b-exp-cat">
+            <option>家賃・地代</option><option>水道光熱費</option><option>通信費</option><option>ソフトウェア・SaaS</option><option>交通費</option><option>機材・備品</option><option>外注費</option><option>交際費</option><option>会議費</option><option>書籍・学習</option><option>健康投資</option><option>広告宣伝</option><option>その他経費</option>
+          </select>
+        </div>
+        <div class="field"><label>支払い方法</label>
+          <select id="b-exp-account"></select>
+        </div>
+        <div class="field checkbox-field"><label>支払済</label><input type="checkbox" id="b-exp-paid" checked></div>
+        <button class="add-btn red" onclick="addEntry('business','expense')" title="追加">+</button>
+        <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="saveAsTemplate('business','expense')" title="固定費テンプレとして保存">📌</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📌 固定費テンプレート</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">よく使う経費をワンタップで追加できます</div>
+      <div class="entry-list" id="business-templates"></div>
+    </div>
+    <div class="card" style="border-color:var(--mp)">
+      <div class="card-title" style="color:var(--mp)">📋 売掛金管理</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">未請求・請求済（＝まだ入金されていない）案件を、入金予定日が近い順に表示します</p>
+      <div id="receivables-list"></div>
+      <div id="receivables-total" style="text-align:right;margin-top:10px;font-family:var(--mono);font-size:13px;color:var(--mp)"></div>
+    </div>
+    <div class="card" style="border-color:var(--gold)">
+      <div class="card-title" style="color:var(--gold)">⚠ 収入依存度・リスク診断</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">直近3ヶ月のクライアント別売上シェアです。特定の1社に偏りすぎていないか確認できます</p>
+      <div id="dependency-chart"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">今月の記録</div>
+      <div class="entry-list" id="business-entries"></div>
+      <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+        <button class="csv-btn" onclick="downloadFreeeCSV()">⬇ freee用CSVをダウンロード</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">週次サマリー</div>
+      <div id="business-weekly"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">売上・経費推移（6ヶ月）</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#5DCAA5"></div>売上</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#F09595"></div>経費</div>
+      </div>
+      <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- 残高・負債 -->
+  <div id="tab-balance" class="section">
+
+    <!-- 月末CF予測ヒーロー -->
+    <div id="cf-forecast-card" class="card" style="border-color:var(--green);background:linear-gradient(135deg,#001a0d 0%,#0a0a2a 100%)">
+      <div class="card-title">今月の手元残高予測</div>
+      <div id="cf-forecast"></div>
+    </div>
+
+    <!-- 未払い一覧 -->
+    <div class="card" style="border-color:var(--red)">
+      <div class="card-title" style="color:var(--red);text-shadow:1px 1px 0 #660000">⚠ 未払い一覧</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">クレカ・ローン・公共料金など、まだ払っていないものを手動で登録できます（過去の月分もOK）</div>
+      <div class="form-grid unpaid-grid">
+        <div class="field"><label>対象月</label><input id="unpaid-month" type="month"></div>
+        <div class="field"><label>内容</label><input id="unpaid-name" placeholder="5月分カード代など"></div>
+        <div class="field"><label>金額（円）</label><input id="unpaid-amount" type="number" placeholder="50000"></div>
+        <div class="field"><label>種類</label>
+          <select id="unpaid-cat" onchange="updateUnpaidLinkSelect()">
+            <option>クレジットカード</option><option>ローン・借金</option><option>公共料金</option><option>その他</option>
+          </select>
+        </div>
+        <div class="field" id="unpaid-link-wrap" style="display:none"><label id="unpaid-link-label">カード</label>
+          <select id="unpaid-link"></select>
+        </div>
+        <div class="field"><label>支払い元口座</label>
+          <select id="unpaid-account"><option value="">未指定（残高に反映しない）</option></select>
+        </div>
+        <button class="add-btn red" onclick="addUnpaid()" title="追加">+</button>
+      </div>
+      <div class="entry-list" id="unpaid-list"></div>
+      <div id="unpaid-total" style="text-align:right;margin-top:10px;font-family:var(--mono);font-size:13px;color:var(--red)"></div>
+    </div>
+
+    <!-- 口座残高 -->
+    <div class="card">
+      <div class="card-title">🏦 口座・現金残高</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">※「現金」という名前で登録すると現金管理もできます</div>
+      <div class="form-grid" style="grid-template-columns:1.5fr 1.5fr auto;gap:8px;align-items:end;margin-bottom:12px">
+        <div class="field"><label>口座名</label><input id="acc-name" placeholder="三菱UFJ、現金 など"></div>
+        <div class="field"><label>現在の残高（円）</label><input id="acc-balance" type="number" placeholder="500000"></div>
+        <button class="add-btn green" onclick="addAccount()" title="追加">+</button>
+      </div>
+      <div class="entry-list" id="account-list"></div>
+      <div id="account-total" style="text-align:right;margin-top:10px;font-family:var(--mono);font-size:13px;color:var(--text-muted)"></div>
+    </div>
+
+    <!-- 振替 -->
+    <div class="card">
+      <div class="card-title">🔄 ふりかえ（口座間・ATM引き出しなど）</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">収支には影響しません。口座残高だけが移動します。</div>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+        <div class="field"><label>出金元</label><select id="transfer-from"></select></div>
+        <div class="field"><label>入金先</label><select id="transfer-to"></select></div>
+        <div class="field"><label>金額（円）</label><input id="transfer-amount" type="number" placeholder="30000"></div>
+        <button class="add-btn green" onclick="addTransfer()" title="振替実行">→</button>
+      </div>
+      <div class="entry-list" id="transfer-list"></div>
+    </div>
+
+    <!-- クレカ -->
+    <div class="card">
+      <div class="card-title">💳 クレジットカード</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">今月の利用額は、支出記録で「支払い方法」にこのカードを選んだ分から自動集計されます。具体的な引き落とし予定額は「未払い一覧」に対象月を指定して登録してください（カード会社ごとに締め日が違うため）</div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="csv-btn" onclick="enableCardNotifications()" style="border-color:var(--gold);color:var(--gold)">🔔 引き落とし日の通知を有効にする</button>
+        <span id="notif-status" style="font-size:11px;color:var(--text-hint)"></span>
+      </div>
+      <div class="form-grid" style="grid-template-columns:1.3fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+        <div class="field"><label>カード名</label><input id="cc-name" placeholder="楽天カード、三井住友など"></div>
+        <div class="field"><label>分割残債（円）</label><input id="cc-debt" type="number" placeholder="0"></div>
+        <div class="field"><label>引き落とし日</label><input id="cc-day" type="number" min="1" max="31" placeholder="27"></div>
+        <button class="add-btn red" onclick="addCreditCard()" title="追加">+</button>
+      </div>
+      <div class="entry-list" id="creditcard-list"></div>
+    </div>
+
+    <!-- ローン・借金 -->
+    <div class="card">
+      <div class="card-title">ローン・借金</div>
+      <p style="font-size:11px;color:var(--text-hint);margin-bottom:10px">「今まさに借りたお金」を入金先口座に反映したい場合は、下の「入金先口座」を選んでください（すでにある借金を記録するだけなら「未指定」でOK）</p>
+      <div class="form-grid" style="grid-template-columns:1.2fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+        <div class="field"><label>名称</label><input id="loan-name" placeholder="奨学金、カーローンなど"></div>
+        <div class="field"><label>借入額・残高（円）</label><input id="loan-balance" type="number" placeholder="1000000"></div>
+        <div class="field"><label>月返済額（円）</label><input id="loan-monthly" type="number" placeholder="30000"></div>
+        <div class="field"><label>返済日</label><input id="loan-day" type="number" min="1" max="31" placeholder="25"></div>
+        <div class="field"><label>入金先口座</label><select id="loan-deposit-account"><option value="">未指定（残高に反映しない）</option></select></div>
+        <button class="add-btn red" onclick="addLoan()" title="追加">+</button>
+      </div>
+      <div class="entry-list" id="loan-list"></div>
+    </div>
+
+    <!-- 借金完済シミュレーター -->
+    <div class="card" style="border-color:var(--gold);background:linear-gradient(135deg,#1a1500 0%,#0a0a2a 100%)">
+      <div class="card-title" style="color:var(--gold)">🎯 借金完済シミュレーター</div>
+      <div id="payoff-sim"></div>
+      <div class="form-grid" style="grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:12px">
+        <div class="field"><label>追加返済額（月・円）</label><input id="payoff-extra" type="number" placeholder="0" oninput="renderPayoffSim()"></div>
+      </div>
+    </div>
+
+    <!-- ファクタリング手数料比較 -->
+    <div class="card" style="border-color:var(--mp)">
+      <div class="card-title" style="color:var(--mp)">💱 ファクタリング手数料比較</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">利用しているファクタリング会社を登録すると、売掛金を今すぐ現金化した場合の受取額を比較できます</p>
+      <div class="form-grid" style="grid-template-columns:1.2fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+        <div class="field"><label>会社名</label><input id="factoring-name" placeholder="ラボル、ペイトナーなど"></div>
+        <div class="field"><label>手数料率（％）</label><input id="factoring-fee" type="number" step="0.1" placeholder="5"></div>
+        <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="addFactoring()" title="追加">+</button>
+      </div>
+      <div id="factoring-list" style="margin-bottom:14px"></div>
+      <div style="border-top:2px solid var(--border);padding-top:12px">
+        <div class="field" style="margin-bottom:10px"><label>売掛金額（円）でシミュレーション</label><input id="factoring-sim-amount" type="number" placeholder="400000" oninput="renderFactoringComparison()"></div>
+        <div id="factoring-comparison"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- レベル・ごほうび -->
+  <div id="tab-level" class="section">
+    <div class="card" style="border-color:var(--gold);background:linear-gradient(135deg,#1a1500 0%,#0a0a2a 100%)">
+      <div id="level-hero"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🏆 ごほうびリスト</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:14px">きろくを　つづけると　けいけんちが　たまる。れべるが　あがると　ごほうびが　かいほうされる！</div>
+      <div id="reward-list"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📈 けいけんちの　しくみ</div>
+      <div style="font-size:12px;color:var(--text-muted);line-height:2">
+        ・きろくした日：1日につき +10 XP<br>
+        ・れんぞく記録ボーナス：連続日数に応じて最大 +18 XP/日<br>
+        ・黒字月ボーナス：収支がプラスで終わった月は +50 XP
+      </div>
+    </div>
+  </div>
+
+  <!-- 総合 -->
+  <div id="tab-overview" class="section">
+    <div class="card" style="border-color:var(--mp)">
+      <div class="card-title" style="color:var(--mp)">📅 月を締める</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">来月に移動して、登録済みの固定費テンプレートをまとめて追加します（家計・仕事どちらも対象）</p>
+      <button class="csv-btn" onclick="closeMonth()" style="border-color:var(--mp);color:var(--mp)">📅 来月に進んで固定費を追加</button>
+    </div>
+    <div class="metrics" id="overview-metrics"></div>
+    <div class="card">
+      <div class="card-title">全体収支推移（6ヶ月）</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#5DCAA5"></div>総収入</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#F09595"></div>総支出</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#7F77DD"></div>純収支</div>
+      </div>
+      <div class="chart-wrap"><canvas id="overview-chart"></canvas></div>
+    </div>
+    <div class="overview-grid">
+      <div class="card">
+        <div class="card-title">家計 カテゴリ別支出</div>
+        <div class="chart-wrap" style="height:180px"><canvas id="personal-pie"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">事業 カテゴリ別経費</div>
+        <div class="chart-wrap" style="height:180px"><canvas id="business-pie"></canvas></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📈 今月の支出ペース（累積）</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">このペースだと月末どうなりそうか、日ごとの累積支出で確認できます</p>
+      <div class="chart-wrap" style="height:200px"><canvas id="daily-pace-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📊 曜日別の支出傾向（直近3ヶ月）</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:8px">週末に使いすぎていないか、曜日ごとの平均支出をチェック</p>
+      <div class="chart-wrap" style="height:200px"><canvas id="weekday-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">今月のサマリー</div>
+      <div id="summary-table"></div>
+    </div>
+    <div class="card" style="border-color:var(--gold)">
+      <div class="card-title" style="color:var(--gold)">🔮 今月の総評</div>
+      <div id="ai-review"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="csv-btn" onclick="copyForAI()">📋 AIに相談する用のテキストをコピー</button>
+        <button class="csv-btn" onclick="copyShareLink()" style="border-color:var(--mp);color:var(--mp)">🔗 共有リンクをコピー</button>
+      </div>
+      <div style="font-size:10px;color:var(--text-hint);margin-top:8px">※共有リンクはURLを開くだけで誰でも閲覧できます。合言葉やパスワードは含まれていませんが、送る相手にはご注意ください</div>
+    </div>
+    <div class="card">
+      <div class="card-title">週次サマリー（総合）</div>
+      <div id="overview-weekly"></div>
+    </div>
+  </div>
+
+  <!-- 年間サマリー -->
+  <div id="tab-annual" class="section">
+    <div class="month-nav">
+      <button class="nav-btn" onclick="changeYear(-1)">‹</button>
+      <div class="month-label" id="annual-year-label"></div>
+      <button class="nav-btn" onclick="changeYear(1)">›</button>
+    </div>
+    <div class="metrics" id="annual-metrics"></div>
+    <div class="card">
+      <div class="card-title">年間収支（月別）</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#5DCAA5"></div>総収入</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#F09595"></div>総支出</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#7F77DD"></div>純収支</div>
+      </div>
+      <div class="chart-wrap" style="height:240px"><canvas id="annual-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">月別サマリー</div>
+      <div id="annual-table"></div>
+    </div>
+    <div class="card" style="border-color:var(--gold)">
+      <div class="card-title" style="color:var(--gold)">📋 確定申告向け 年間経費集計</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">事業経費をカテゴリ別に年間合計しています（フリーランスの確定申告用）</p>
+      <div id="tax-summary"></div>
+      <button class="csv-btn" onclick="downloadTaxSummaryCSV()" style="margin-top:12px">⬇ 年間経費集計CSVをダウンロード</button>
+    </div>
+  </div>
+
+  <!-- 予算管理 -->
+  <div id="tab-budget" class="section">
+    <div class="card">
+      <div class="card-title">月間目標予算を設定</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div class="field"><label>収入目標（円）</label><input id="budget-inc" type="number" placeholder="500000"></div>
+        <div class="field"><label>支出上限（円）</label><input id="budget-exp" type="number" placeholder="200000"></div>
+        <div class="field"><label>フリーランス売上目標（円）</label><input id="budget-biz-inc" type="number" placeholder="300000"></div>
+        <div class="field"><label>フリーランス経費上限（円）</label><input id="budget-biz-exp" type="number" placeholder="50000"></div>
+      </div>
+      <button class="csv-btn" onclick="saveBudget()" style="border-color:var(--accent);color:var(--accent);background:var(--accent-bg)">保存する</button>
+    </div>
+
+    <!-- 家事按分設定 -->
+    <div class="card" style="border-color:var(--mp)">
+      <div class="card-title" style="color:var(--mp)">🏠 家事按分設定</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">在宅ワークで家賃・光熱費などを一部経費にしたい場合、カテゴリごとに按分率（％）を設定できます。家計で入力する時、按分後の金額を自動で事業経費にも計上できるようになります</p>
+      <div class="form-grid" style="grid-template-columns:1.2fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+        <div class="field"><label>家計カテゴリ</label>
+          <select id="alloc-cat">
+            <option>家賃・住宅費</option><option>光熱費</option><option>通信費</option><option>交通費</option><option>その他</option>
+          </select>
+        </div>
+        <div class="field"><label>按分率（％）</label><input id="alloc-rate" type="number" min="1" max="100" placeholder="30"></div>
+        <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="setAllocation()" title="設定">+</button>
+      </div>
+      <div id="alloc-list"></div>
+    </div>
+    <div id="budget-progress"></div>
+
+    <!-- カテゴリ別予算 -->
+    <div class="card" style="border-color:var(--mp)">
+      <div class="card-title" style="color:var(--mp)">🎯 カテゴリ別予算（家計）</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">「食費だけ月3万円まで」のように、カテゴリごとに上限を設定できます</p>
+      <div class="form-grid" style="grid-template-columns:1.2fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+        <div class="field"><label>カテゴリ</label>
+          <select id="catbudget-cat">
+            <option>家賃・住宅費</option><option>食費</option><option>光熱費</option><option>交通費</option><option>通信費</option><option>娯楽・外食</option><option>美容・理髪</option><option>医療・保険</option><option>教育</option><option>衣類</option><option>その他</option>
+          </select>
+        </div>
+        <div class="field"><label>上限（円）</label><input id="catbudget-amount" type="number" placeholder="30000"></div>
+        <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="setCategoryBudget()" title="設定">+</button>
+      </div>
+      <div id="catbudget-list"></div>
+    </div>
+
+    <!-- 貯蓄目標 -->
+    <div class="card" style="border-color:var(--gold)">
+      <div class="card-title" style="color:var(--gold)">💰 貯蓄目標</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">「旅行用に20万円貯める」のように目標を立てて、進捗を見える化できます</p>
+      <div class="form-grid" style="grid-template-columns:1.2fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+        <div class="field"><label>目標名</label><input id="goal-name" placeholder="旅行資金、緊急予備費など"></div>
+        <div class="field"><label>目標金額（円）</label><input id="goal-target" type="number" placeholder="200000"></div>
+        <div class="field"><label>期限（任意）</label><input id="goal-deadline" type="month"></div>
+        <button class="add-btn" style="background:var(--win-light);color:var(--gold);border:3px solid var(--gold)" onclick="addGoal()" title="追加">+</button>
+      </div>
+      <div id="goal-list"></div>
+    </div>
+  </div>
+
+  <!-- バックアップ -->
+  <div id="tab-backup" class="section">
+    <div class="card" style="border-color:var(--mp)">
+      <div class="card-title" style="color:var(--mp)">☁️ クラウド同期（スマホ⇔PC）</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">合言葉を設定すると、同じ合言葉を入力した端末同士で自動的にデータが同期されます。合言葉は他人に教えないでください。</p>
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input type="password" id="sync-passphrase" placeholder="合言葉（8文字以上推奨）" style="flex:1;min-width:180px">
+        <button class="csv-btn" onclick="handleSetupSync()" style="border-color:var(--mp);color:var(--mp)">🔗 接続する</button>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--text-muted)">状態:</span>
+        <span id="sync-status" style="font-size:12px;color:var(--text-hint)">未設定</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="csv-btn" onclick="if(confirm('同期を解除しますか？'))disableSync()" style="border-color:var(--red);color:var(--red)">同期を解除</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">💾 ぼうけんのしょを　セーブする</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">ぜんデータを　JSONファイルに　ほぞんします。べつのまちへ　たびだつときに　つかいます。</p>
+      <button class="csv-btn" onclick="downloadBackup()">💾 セーブする</button>
+    </div>
+    <div class="card">
+      <div class="card-title">📂 ぼうけんのしょを　ロードする</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">バックアップJSONを　よみこみます。<span style="color:var(--red)">いまのデータは　きえてしまいます。</span></p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input type="file" id="restore-file" accept=".json" style="font-size:13px;flex:1;min-width:200px">
+        <button class="csv-btn" onclick="restoreBackup()" style="border-color:var(--red);color:var(--red);background:var(--red-bg)">復元する</button>
+      </div>
+      <div id="restore-msg" style="margin-top:10px;font-size:13px"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">💀 ぼうけんのしょを　きえる</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">ぜんデータを　さくじょします。このそうさは　もとにもどせません。</p>
+      <button class="csv-btn" onclick="resetData()" style="border-color:var(--red);color:var(--red);background:#1a0000">💀 きえてしまえ！</button>
+    </div>
+  </div>
+</div>
+
+<!-- ︙ コンテキストメニュー -->
+<div class="ctx-menu" id="ctx-menu">
+  <div class="ctx-item" onclick="ctxEdit()">✏️ へんしゅう</div>
+  <div class="ctx-item" onclick="ctxCopy()">📋 コピー</div>
+  <div class="ctx-item danger" onclick="ctxDelete()">🗑️ さくじょ</div>
+</div>
+
+<!-- 編集モーダル -->
+<div class="undo-toast" id="undo-toast">
+  <span class="undo-toast-text" id="undo-toast-text"></span>
+  <button class="undo-toast-btn" onclick="performUndo()">↩ 元に戻す</button>
+</div>
+
+<div class="modal-overlay" id="search-modal" onclick="if(event.target===this)closeSearchModal()">
+  <div class="modal">
+    <div class="modal-title">🔍 過去の支出・収入を検索</div>
+    <div class="modal-field"><label>キーワード（内容・カテゴリ）</label><input id="search-keyword" placeholder="ラーメン、食費など" oninput="runSearch()"></div>
+    <div class="modal-field"><label>対象</label>
+      <select id="search-mode" onchange="runSearch()">
+        <option value="all">家計＋仕事</option>
+        <option value="personal">家計のみ</option>
+        <option value="business">仕事のみ</option>
+      </select>
+    </div>
+    <div id="search-results" style="max-height:320px;overflow-y:auto;margin-top:10px"></div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeSearchModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<div class="levelup-overlay" id="levelup-overlay">
+  <div class="levelup-box">
+    <div class="levelup-title">🎉 レベルアップ！</div>
+    <div class="levelup-lv" id="levelup-lv-num"></div>
+    <div class="levelup-name" id="levelup-title-name"></div>
+    <div class="levelup-reward" id="levelup-reward-text"></div>
+    <button class="levelup-close" onclick="closeLevelUpModal()">▶ おめでとう！</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="edit-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-title">▶ きろくを　へんしゅう</div>
+    <div class="modal-field"><label>日付</label><input id="edit-date" type="date"></div>
+    <div class="modal-field"><label>内容</label><input id="edit-name" type="text"></div>
+    <div class="modal-field"><label>金額（円）</label><input id="edit-amount" type="number"></div>
+    <div class="modal-field"><label>カテゴリ</label><input id="edit-cat" type="text"></div>
+    <div class="modal-field" id="edit-status-wrap" style="display:none"><label>ステータス</label>
+      <select id="edit-status"><option value="未請求">未請求</option><option value="請求済">請求済</option><option value="入金済">入金済</option></select>
+    </div>
+    <div class="modal-field"><label id="edit-account-label">口座</label>
+      <select id="edit-account"><option value="">なし</option></select>
+    </div>
+    <div class="modal-field" id="edit-paid-wrap" style="display:none;flex-direction:row;align-items:center;gap:10px">
+      <label style="margin:0">支払済み</label><input type="checkbox" id="edit-paid" style="width:20px;height:20px;accent-color:var(--green)">
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeModal()">キャンセル</button>
+      <button class="modal-btn primary" onclick="saveEdit()">✓ ほぞんする</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="purchase-check-modal" onclick="if(event.target===this)closePurchaseCheckModal()">
+  <div class="modal">
+    <div class="modal-title">🏪 買っていい？チェック</div>
+    <p style="font-size:11px;color:var(--text-muted);margin-bottom:14px">コンビニやスーパーで「買おうかな…」と迷った時に。金額を入れると、今月の収支＋過去の傾向から判定します</p>
+    <div class="modal-field"><label>金額（円）</label><input id="check-amount" type="number" placeholder="500"></div>
+    <div class="modal-field"><label>カテゴリ</label>
+      <select id="check-cat">
+        <option>食費</option><option>娯楽・外食</option><option>衣類</option><option>美容・理髪</option><option>その他</option>
+      </select>
+    </div>
+    <button class="csv-btn" onclick="runPurchaseCheck()" style="width:100%;justify-content:center;margin-bottom:12px">▶ 判定する</button>
+    <div id="purchase-check-result"></div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closePurchaseCheckModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ---- 共有リンクモード：?share=... がある場合は、通常のアプリ起動をせず閲覧用画面を表示する ----
+(function checkShareMode() {
+  const params = new URLSearchParams(location.search);
+  const shared = params.get('share');
+  if (!shared) return;
+
+  let text = '';
+  try {
+    text = LZString.decompressFromEncodedURIComponent(shared);
+    if (text === null || text === '') throw new Error('decompress failed');
+  } catch(e) {
+    text = '（共有データの読み込みに失敗しました。URLが正しいかご確認ください）';
+  }
+
+  document.title = 'キャッシュフロー共有ビュー';
+  document.body.innerHTML = `
+    <div style="max-width:640px;margin:0 auto;padding:32px 20px;font-family:'DotGothic16',monospace;background:#0a0a1a;min-height:100vh;color:#fff;box-sizing:border-box">
+      <div style="font-size:14px;color:#ffdd44;margin-bottom:6px">🪙 キャッシュフロー管理 — 共有ビュー</div>
+      <div style="font-size:11px;color:#6666aa;margin-bottom:20px">このリンクは閲覧専用です。ログインや合言葉は不要です。</div>
+      <pre style="background:#1a1a6e;border:3px solid #aaaaff;padding:18px;white-space:pre-wrap;word-break:break-word;font-size:13px;line-height:1.8;color:#fff;font-family:'DotGothic16',monospace">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+    </div>
+  `;
+  // 通常のアプリ初期化を止めるため、この後のスクリプトを止める
+  throw new Error('SHARE_MODE_STOP');
+})();
+
+const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+const now = new Date();
+
+// State
+let state = loadState();
+
+function loadState() {
+  try {
+    const saved = localStorage.getItem('cf-manager-v1');
+    if (saved) return JSON.parse(saved);
+  } catch(e) {}
+  return {
+    personal: { month: now.getMonth(), year: now.getFullYear(), entries: {} },
+    business: { month: now.getMonth(), year: now.getFullYear(), entries: {} }
+  };
+}
+
+function saveState() {
+  try { localStorage.setItem('cf-manager-v1', JSON.stringify(state)); } catch(e) {}
+}
+
+function fmt(n) { return Math.round(n).toLocaleString('ja-JP') + '円'; }
+function mkey(y, m) { return `${y}-${String(m).padStart(2,'0')}`; }
+function getEntries(mode, y, m) { return state[mode].entries[mkey(y,m)] || []; }
+function setEntries(mode, y, m, arr) { state[mode].entries[mkey(y,m)] = arr; saveState(); }
+
+document.getElementById('today-label').textContent = `${now.getFullYear()}年${MONTHS[now.getMonth()]}`;
+
+// ---- レベル・ごほうびシステム ----
+const DEFAULT_REWARDS = {
+  3:  { icon: '🍜', name: 'ラーメン外食OK' },
+  5:  { icon: '🥩', name: '焼肉OK' },
+  10: { icon: '🍣', name: '寿司OK' },
+  15: { icon: '🛍', name: '欲しかったもの1つOK' },
+  20: { icon: '✈️', name: 'ご褒美旅行を検討OK' }
+};
+const REWARD_LEVELS = [3,5,10,15,20];
+
+function loadRewards() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('cf-rewards-v1'));
+    if (saved) return saved;
+  } catch(e) {}
+  return JSON.parse(JSON.stringify(DEFAULT_REWARDS));
+}
+function saveRewardItem(level, icon, name) {
+  const rewards = loadRewards();
+  rewards[level] = { icon: icon || '🎁', name: name || 'ごほうび' };
+  localStorage.setItem('cf-rewards-v1', JSON.stringify(rewards));
+}
+// 後方互換：既存コードは REWARDS[lv] で参照しているため、Proxyで動的に読み込む
+const REWARDS = new Proxy({}, { get: (_, lv) => loadRewards()[lv] });
+
+function xpForLevel(level) { return 50 * level * (level - 1); } // そのレベルに到達するのに必要な累計XP
+
+function levelFromXP(xp) {
+  let lv = 1;
+  while (xpForLevel(lv + 1) <= xp) lv++;
+  return lv;
+}
+
+function levelTitle(lv) {
+  if (lv >= 20) return 'CFマスター';
+  if (lv >= 13) return 'エキスパート冒険者';
+  if (lv >= 8) return 'じょうきゅう冒険者';
+  if (lv >= 4) return 'ちゅうきゅう冒険者';
+  return 'しょきゅう冒険者';
+}
+
+function loadLevel() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('cf-level-v1'));
+    if (saved) return saved;
+  } catch(e) {}
+  return { xp: 0, recordedDates: [], streak: 0, lastDate: '', claimedBonusMonths: [] };
+}
+function saveLevel(l) { localStorage.setItem('cf-level-v1', JSON.stringify(l)); }
+
+// 今日の記録に対してXPを付与（1日1回だけ）
+function awardDailyXP() {
+  const l = loadLevel();
+  const today = getTodayKey();
+  if (l.recordedDates.includes(today)) return; // 今日はもう付与済み
+
+  // 連続日数の判定
+  const yesterday = (() => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  })();
+  l.streak = (l.lastDate === yesterday) ? l.streak + 1 : 1;
+  l.lastDate = today;
+  l.recordedDates.push(today);
+
+  const streakBonus = Math.min(l.streak - 1, 6) * 3; // 最大+18
+  const gained = 10 + streakBonus;
+
+  const beforeLv = levelFromXP(l.xp);
+  l.xp += gained;
+  const afterLv = levelFromXP(l.xp);
+
+  saveLevel(l);
+
+  if (afterLv > beforeLv) {
+    // 到達した最も高いレベルで、報酬対象なら演出を出す
+    const crossedRewardLv = REWARD_LEVELS.filter(rl => rl > beforeLv && rl <= afterLv).sort((a,b)=>b-a)[0];
+    showLevelUpModal(afterLv, crossedRewardLv);
+  }
+}
+
+// 「今日は何も使わなかった」ボタン：収支記録なしでも連続記録を維持する
+function logNoSpendDay() {
+  awardDailyXP();
+  dismissReminder();
+  renderAll();
+}
+
+// 黒字月ボーナス（前月が黒字なら+50XP、月ごとに1回だけ）
+function checkBlackMonthBonus() {
+  const d = new Date();
+  let py = d.getFullYear(), pm = d.getMonth() - 1;
+  if (pm < 0) { pm = 11; py--; }
+  const monthKey = mkey(py, pm);
+
+  const l = loadLevel();
+  if (l.claimedBonusMonths.includes(monthKey)) return;
+
+  const pE = getEntries('personal', py, pm);
+  const bE = getEntries('business', py, pm);
+  const allE = [...pE, ...bE];
+  if (allE.length === 0) return; // その月に記録がなければ判定しない
+
+  const inc = allE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const exp = allE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+
+  l.claimedBonusMonths.push(monthKey);
+  if (inc - exp > 0) {
+    const beforeLv = levelFromXP(l.xp);
+    l.xp += 50;
+    const afterLv = levelFromXP(l.xp);
+    saveLevel(l);
+    if (afterLv > beforeLv) {
+      const crossedRewardLv = REWARD_LEVELS.filter(rl => rl > beforeLv && rl <= afterLv).sort((a,b)=>b-a)[0];
+      showLevelUpModal(afterLv, crossedRewardLv);
+    }
+  } else {
+    saveLevel(l);
+  }
+}
+
+function showLevelUpModal(lv, rewardLv) {
+  document.getElementById('levelup-lv-num').textContent = `Lv.${lv}`;
+  document.getElementById('levelup-title-name').textContent = levelTitle(lv);
+  const rewardEl = document.getElementById('levelup-reward-text');
+  if (rewardLv && REWARDS[rewardLv]) {
+    rewardEl.style.display = 'block';
+    rewardEl.textContent = `${REWARDS[rewardLv].icon} ごほうび解禁：${REWARDS[rewardLv].name}`;
+  } else {
+    rewardEl.style.display = 'none';
+  }
+  document.getElementById('levelup-overlay').classList.add('open');
+}
+function closeLevelUpModal() {
+  document.getElementById('levelup-overlay').classList.remove('open');
+}
+
+function renderLevel() {
+  const l = loadLevel();
+  const lv = levelFromXP(l.xp);
+  const title = levelTitle(lv);
+  const curBase = xpForLevel(lv);
+  const nextBase = xpForLevel(lv + 1);
+  const progress = Math.min(100, Math.round(((l.xp - curBase) / (nextBase - curBase)) * 100));
+
+  // ヘッダーバッジ
+  const badgeEl = document.getElementById('level-badge');
+  if (badgeEl) badgeEl.innerHTML = `⭐ Lv.${lv}`;
+
+  // ヒーローカード
+  const heroEl = document.getElementById('level-hero');
+  if (heroEl) {
+    heroEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:16px;margin-bottom:10px">
+        <div style="font-family:'Press Start 2P',monospace;font-size:24px;color:var(--gold);text-shadow:2px 2px 0 var(--gold-dark)">Lv.${lv}</div>
+        <div>
+          <div style="font-size:14px;color:#fff">${title}</div>
+          <div style="font-size:11px;color:var(--text-muted)">🔥 れんぞく記録 ${l.streak}日</div>
+        </div>
+      </div>
+      <div class="xp-bar-bg"><div class="xp-bar" style="width:${progress}%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-hint)">
+        <span>${fmt(l.xp - curBase).replace('円','XP')}</span>
+        <span>つぎのLvまで ${fmt(nextBase - l.xp).replace('円','XP')}</span>
+      </div>
+    `;
+  }
+
+  // 報酬リスト
+  const rewardEl = document.getElementById('reward-list');
+  if (rewardEl) {
+    rewardEl.innerHTML = REWARD_LEVELS.map(rl => {
+      const unlocked = lv >= rl;
+      const r = REWARDS[rl];
+      return `
+      <div class="reward-item ${unlocked ? 'unlocked' : 'locked'}">
+        <div class="reward-icon">${r.icon}</div>
+        <div class="reward-body">
+          <div class="reward-lv">Lv.${rl}</div>
+          <div class="reward-name">${r.name}</div>
+        </div>
+        <div class="reward-status ${unlocked ? 'ok' : 'lock'}">${unlocked ? '✓ かいほう済' : '🔒 みかいほう'}</div>
+        <button class="del-btn" onclick="editReward(${rl})" title="このごほうびを編集">✏️</button>
+      </div>`;
+    }).join('');
+  }
+}
+
+function editReward(level) {
+  const current = loadRewards()[level] || { icon: '🎁', name: '' };
+  const newName = prompt(`Lv.${level}のごほうび内容を入力してください`, current.name);
+  if (newName === null) return;
+  const newIcon = prompt(`Lv.${level}のごほうびの絵文字（アイコン）を入力してください（1文字程度）`, current.icon);
+  if (newIcon === null) return;
+  saveRewardItem(level, newIcon.trim(), newName.trim());
+  renderLevel();
+}
+
+// ---- 未払い一覧（手動管理） ----
+function loadUnpaid() {
+  try { return JSON.parse(localStorage.getItem('cf-unpaid-v1')) || []; } catch(e) { return []; }
+}
+function saveUnpaid(list) { localStorage.setItem('cf-unpaid-v1', JSON.stringify(list)); }
+
+function updateUnpaidLinkSelect() {
+  const cat = document.getElementById('unpaid-cat').value;
+  const wrap = document.getElementById('unpaid-link-wrap');
+  const label = document.getElementById('unpaid-link-label');
+  const sel = document.getElementById('unpaid-link');
+  const b = loadBalance();
+
+  if (cat === 'クレジットカード') {
+    wrap.style.display = 'block';
+    label.textContent = 'カード';
+    sel.innerHTML = (b.cards||[]).length
+      ? b.cards.map(c => `<option value="${c.id}">${c.name}</option>`).join('')
+      : '<option value="" disabled>カード未登録</option>';
+  } else if (cat === 'ローン・借金') {
+    wrap.style.display = 'block';
+    label.textContent = 'ローン';
+    sel.innerHTML = (b.loans||[]).length
+      ? b.loans.map(l => `<option value="${l.id}">${l.name}</option>`).join('')
+      : '<option value="" disabled>ローン未登録</option>';
+  } else {
+    wrap.style.display = 'none';
+    sel.innerHTML = '';
+  }
+}
+
+function addUnpaid() {
+  const monthEl = document.getElementById('unpaid-month');
+  const nameEl = document.getElementById('unpaid-name');
+  const amountEl = document.getElementById('unpaid-amount');
+  const catEl = document.getElementById('unpaid-cat');
+  const linkEl = document.getElementById('unpaid-link');
+  const accEl = document.getElementById('unpaid-account');
+  const name = nameEl.value.trim();
+  const amount = parseFloat(amountEl.value);
+  const month = monthEl.value; // "YYYY-MM" 形式 or 空
+  if (!name || isNaN(amount) || amount <= 0) {
+    nameEl.style.borderColor = (!name ? 'var(--red)' : '');
+    amountEl.style.borderColor = (isNaN(amount)||amount<=0 ? 'var(--red)' : '');
+    setTimeout(() => { nameEl.style.borderColor=''; amountEl.style.borderColor=''; }, 1000);
+    return;
+  }
+  const item = { id: Date.now(), name, amount, month: month || getTodayKey().slice(0,7), cat: catEl.value };
+  // カード/ローンへの紐付け
+  if ((catEl.value === 'クレジットカード' || catEl.value === 'ローン・借金') && linkEl.value) {
+    const b = loadBalance();
+    if (catEl.value === 'クレジットカード') {
+      const card = (b.cards||[]).find(c => c.id === parseInt(linkEl.value));
+      if (card) { item.cardId = card.id; item.linkName = card.name; }
+    } else {
+      const loan = (b.loans||[]).find(l => l.id === parseInt(linkEl.value));
+      if (loan) { item.loanId = loan.id; item.linkName = loan.name; }
+    }
+  }
+  // 支払い元口座（支払い済みにした瞬間、ここから引かれる）
+  if (accEl.value) {
+    const b = loadBalance();
+    const acc = (b.accounts||[]).find(a => a.id === parseInt(accEl.value));
+    if (acc) { item.accountId = acc.id; item.accountName = acc.name; }
+  }
+  const list = loadUnpaid();
+  list.push(item);
+  saveUnpaid(list);
+  monthEl.value = ''; nameEl.value = ''; amountEl.value = '';
+  renderUnpaidList();
+}
+
+function markUnpaidDone(id) {
+  const list = loadUnpaid();
+  const item = list.find(u => u.id === id);
+  if (!item) return;
+  // 支払い元の口座が指定されていれば、今このタイミングで残高から引く
+  let balanceApplied = false;
+  if (item.accountId) {
+    const b = loadBalance();
+    const acc = b.accounts.find(a => a.id === item.accountId);
+    if (acc) { acc.balance -= item.amount; saveBalance(b); balanceApplied = true; }
+  }
+  saveUnpaid(list.filter(u => u.id !== id));
+
+  // 家計に支出記録として追加する（今日の日付で）
+  const catIcon = { 'クレジットカード':'💳', 'ローン・借金':'📋', '公共料金':'💡', 'その他':'📝' };
+  const newEntry = {
+    id: Date.now() + 1,
+    date: getTodayKey(),
+    name: item.linkName ? `${item.name}（${item.linkName}）` : item.name,
+    amount: item.amount,
+    type: 'expense',
+    cat: 'その他',
+    paid: true
+  };
+  if (item.accountId) {
+    newEntry.accountId = item.accountId;
+    newEntry.accountName = item.accountName;
+    newEntry.balanceApplied = true; // 上ですでに残高へ反映済みのため
+  }
+  const { month, year } = state.personal;
+  const pEntries = getEntries('personal', year, month);
+  pEntries.unshift(newEntry);
+  setEntries('personal', year, month, pEntries);
+
+  renderAll();
+
+  showUndoToast(`「${item.name}」を支払い済みにして家計に記録しました`, () => {
+    const curList = loadUnpaid();
+    curList.push(item);
+    saveUnpaid(curList);
+    if (balanceApplied) {
+      const b = loadBalance();
+      const acc = b.accounts.find(a => a.id === item.accountId);
+      if (acc) { acc.balance += item.amount; saveBalance(b); }
+    }
+    // 追加した家計の記録も取り消す
+    const curPEntries = getEntries('personal', year, month).filter(e => e.id !== newEntry.id);
+    setEntries('personal', year, month, curPEntries);
+    renderAll();
+  });
+}
+
+function markAutoUnpaidDone(mode, bucketKey, id) {
+  const arr = state[mode].entries[bucketKey] || [];
+  const idx = arr.findIndex(e => e.id === id);
+  if (idx === -1) return;
+  const entry = arr[idx];
+  let justApplied = false;
+  // 口座払いで、まだ残高に反映されていなければ、今このタイミングで反映する
+  if (entry.accountId && !entry.balanceApplied) {
+    const b = loadBalance();
+    const acc = b.accounts.find(a => a.id === entry.accountId);
+    if (acc) { acc.balance -= entry.amount; saveBalance(b); }
+    entry.balanceApplied = true;
+    justApplied = true;
+  }
+  entry.paid = true;
+  saveState();
+  renderAll();
+
+  showUndoToast(`「${entry.name}」を支払い済みにしました`, () => {
+    const curArr = state[mode].entries[bucketKey] || [];
+    const curIdx = curArr.findIndex(e => e.id === id);
+    if (curIdx !== -1) {
+      curArr[curIdx].paid = false;
+      if (justApplied) {
+        curArr[curIdx].balanceApplied = false;
+        const b = loadBalance();
+        const acc = b.accounts.find(a => a.id === entry.accountId);
+        if (acc) { acc.balance += entry.amount; saveBalance(b); }
+      }
+      saveState();
+    }
+    renderAll();
+  });
+}
+
+function getUnpaidItems() {
+  const b = loadBalance();
+  const manual = loadUnpaid().map(u => ({
+    kind: 'manual', id: u.id, month: u.month, name: u.name, amount: u.amount, cat: u.cat,
+    cardId: u.cardId, loanId: u.loanId, linkName: u.linkName
+  }));
+
+  // 支出記録で「支払済」のチェックを外したものを自動で合流
+  const auto = [];
+  ['personal','business'].forEach(mode => {
+    const buckets = state[mode].entries || {};
+    Object.entries(buckets).forEach(([bucketKey, arr]) => {
+      arr.forEach(e => {
+        if (e.type === 'expense' && e.paid === false) {
+          auto.push({
+            kind: 'auto', mode, bucketKey, id: e.id,
+            month: e.date ? e.date.slice(0,7) : bucketKey,
+            name: e.name, amount: e.amount,
+            cat: e.cardId ? 'クレジットカード' : (mode === 'business' ? '仕事の経費' : '家計の支出'),
+            cardId: e.cardId, linkName: e.cardName
+          });
+        }
+      });
+    });
+  });
+
+  return [...manual, ...auto].sort((a,b) => a.month.localeCompare(b.month));
+}
+
+function renderUnpaidList() {
+  const list = getUnpaidItems();
+  const listEl = document.getElementById('unpaid-list');
+  const totalEl = document.getElementById('unpaid-total');
+  if (!listEl) return;
+
+  const catIcon = { 'クレジットカード':'💳', 'ローン・借金':'📋', '公共料金':'💡', 'その他':'📝', '家計の支出':'🏠', '仕事の経費':'💼' };
+
+  listEl.innerHTML = list.length ? list.map(u => `
+    <div class="entry">
+      <span style="font-size:11px;color:var(--text-hint);font-family:var(--mono);white-space:nowrap">${u.month}</span>
+      <span class="entry-name">${catIcon[u.cat]||'📝'} ${u.name}<span class="acc-badge" style="border-color:var(--red);color:var(--red)">${u.linkName || u.cat}</span></span>
+      <span class="entry-amount exp">-${fmt(u.amount)}</span>
+      <button class="del-btn" onclick="${u.kind === 'manual' ? `markUnpaidDone(${u.id})` : `markAutoUnpaidDone('${u.mode}','${u.bucketKey}',${u.id})`}" title="支払い済みにする">✓</button>
+    </div>`).join('') : '<div class="empty">未払いの記録はありません</div>';
+
+  const total = list.reduce((s,u) => s + u.amount, 0);
+  totalEl.textContent = list.length ? `合計 -${fmt(total)}` : '';
+}
+
+// ---- リマインダーバナー ----
+function getTodayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function hasEntryToday() {
+  const todayStr = getTodayKey();
+  const allEntries = [
+    ...Object.values(state.personal.entries).flat(),
+    ...Object.values(state.business.entries).flat()
+  ];
+  return allEntries.some(e => e.date === todayStr);
+}
+
+function dismissReminder() {
+  document.getElementById('reminder-banner').style.display = 'none';
+  localStorage.setItem('cf-reminder-dismissed', getTodayKey());
+}
+
+function initReminder() {
+  const dismissed = localStorage.getItem('cf-reminder-dismissed');
+  const today = getTodayKey();
+  if (dismissed !== today && !hasEntryToday()) {
+    document.getElementById('reminder-banner').style.display = 'flex';
+  }
+}
+
+initReminder();
+checkBlackMonthBonus();
+checkCardNotifications();
+
+function changeMonth(mode, dir) {
+  let m = state[mode].month + dir;
+  let y = state[mode].year;
+  if (m > 11) { m = 0; y++; }
+  if (m < 0) { m = 11; y--; }
+  state[mode].month = m;
+  state[mode].year = y;
+  saveState();
+  renderAll();
+}
+
+// ---- 月締め：来月に進んで固定費テンプレを一括追加 ----
+function closeMonth() {
+  const templates = loadTemplates();
+  if (templates.length === 0) {
+    if (!confirm('固定費テンプレートが登録されていません。来月に移動するだけでよろしいですか？')) return;
+  } else if (!confirm(`来月に移動して、登録済みの固定費テンプレート（${templates.length}件）を追加します。よろしいですか？`)) {
+    return;
+  }
+
+  ['personal','business'].forEach(mode => changeMonth(mode, 1));
+
+  let addedCount = 0;
+  templates.forEach(tpl => {
+    addFromTemplate(tpl.id);
+    addedCount++;
+  });
+
+  switchTab('overview');
+  alert(`来月に移動しました！${addedCount > 0 ? `固定費テンプレートを${addedCount}件追加しました。` : ''}`);
+}
+
+function addEntry(mode, type) {
+  const isInc = type === 'income';
+  const isBiz = mode === 'business';
+  const p = isBiz ? 'b' : 'p';
+  const t = isInc ? 'inc' : 'exp';
+  const nameEl = document.getElementById(`${p}-${t}-name`);
+  const amountEl = document.getElementById(`${p}-${t}-amount`);
+  const catEl = document.getElementById(`${p}-${t}-cat`);
+  const name = nameEl.value.trim();
+  const amount = parseFloat(amountEl.value);
+  if (!name || isNaN(amount) || amount <= 0) {
+    nameEl.style.borderColor = (!name ? 'var(--red)' : '');
+    amountEl.style.borderColor = (isNaN(amount)||amount<=0 ? 'var(--red)' : '');
+    setTimeout(() => { nameEl.style.borderColor=''; amountEl.style.borderColor=''; }, 1000);
+    return;
+  }
+  const { month, year } = state[mode];
+  const entries = getEntries(mode, year, month);
+  const entry = { id: Date.now(), name, amount, type, cat: catEl.value };
+  const dateEl = document.getElementById(`${p}-${t}-date`);
+  entry.date = dateEl ? dateEl.value : '';
+  if (isBiz && isInc) {
+    const statusMap = { '0': '未請求', '1': '請求済', '2': '入金済' };
+    entry.status = statusMap[document.getElementById('b-inc-status').value] || '未請求';
+    const dueDateEl = document.getElementById('b-inc-duedate');
+    if (dueDateEl && dueDateEl.value) entry.dueDate = dueDateEl.value;
+  }
+  if (!isInc) {
+    const paidEl = document.getElementById(`${p}-exp-paid`);
+    entry.paid = paidEl ? paidEl.checked : true;
+  }
+  // 口座・クレカへの反映
+  const accEl = document.getElementById(`${p}-${t}-account`);
+  const rawVal = accEl ? accEl.value : '';
+  if (rawVal && rawVal.startsWith('acc-')) {
+    const accId = parseInt(rawVal.slice(4));
+    entry.accountId = accId;
+    entry.accountName = accEl.options[accEl.selectedIndex]?.text.replace('🏦','').split('（')[0].trim() || '';
+    // 支払済み（または収入）の場合のみ、その場で口座残高に反映する。未払いならまだ反映しない
+    if (entry.paid !== false) {
+      const b = loadBalance();
+      const acc = b.accounts.find(a => a.id === accId);
+      if (acc) { acc.balance += isInc ? amount : -amount; saveBalance(b); }
+      entry.balanceApplied = true;
+    } else {
+      entry.balanceApplied = false;
+    }
+  } else if (rawVal && rawVal.startsWith('card-')) {
+    const cardId = parseInt(rawVal.slice(5));
+    entry.cardId = cardId;
+    const b = loadBalance();
+    const card = (b.cards || []).find(c => c.id === cardId);
+    entry.cardName = card ? card.name : '';
+    // クレカ払いは口座残高を即時変動させない（引き落とし日に別途処理）
+  }
+  entries.unshift(entry);
+  setEntries(mode, year, month, entries);
+
+  // 家事按分：家計の支出で、按分設定＆チェックがONなら事業経費にも自動計上
+  if (mode === 'personal' && !isInc) {
+    const allocCheckEl = document.getElementById('p-exp-alloc-check');
+    const allocHintEl = document.getElementById('alloc-hint');
+    if (allocHintEl && allocHintEl.style.display !== 'none' && allocCheckEl && allocCheckEl.checked) {
+      const map = loadAllocations();
+      const rate = map[entry.cat];
+      if (rate) {
+        const allocAmount = Math.round(amount * rate / 100);
+        if (allocAmount > 0) {
+          const bizCatMap = { '家賃・住宅費': '家賃・地代', '光熱費': '水道光熱費', '通信費': '通信費', '交通費': '交通費' };
+          const bizCat = bizCatMap[entry.cat] || 'その他経費';
+          const { month: bMonth, year: bYear } = state.business;
+          const bizEntries = getEntries('business', bYear, bMonth);
+          bizEntries.unshift({
+            id: Date.now() + 1,
+            date: entry.date, name: `${entry.name}（家事按分${rate}%）`,
+            amount: allocAmount, type: 'expense', cat: bizCat, paid: true
+          });
+          setEntries('business', bYear, bMonth, bizEntries);
+        }
+      }
+    }
+  }
+
+  awardDailyXP();
+  nameEl.value = ''; amountEl.value = '';
+  const paidElReset = document.getElementById(`${p}-exp-paid`);
+  if (paidElReset) paidElReset.checked = true;
+  const allocHintReset = document.getElementById('alloc-hint');
+  if (allocHintReset) allocHintReset.style.display = 'none';
+  nameEl.focus();
+  renderAll();
+}
+
+function deleteEntry(mode, id) {
+  const { month, year } = state[mode];
+  setEntries(mode, year, month, getEntries(mode, year, month).filter(e => e.id !== id));
+  renderAll();
+}
+
+// ---- カード引き落とし日の通知 ----
+function updateNotifStatus() {
+  const el = document.getElementById('notif-status');
+  if (!el) return;
+  const enabled = localStorage.getItem('cf-notif-enabled') === '1'
+    && typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  el.textContent = enabled ? '✅ 有効（アプリを開いた時にお知らせします）' : '';
+}
+
+function enableCardNotifications() {
+  if (!('Notification' in window)) {
+    alert('お使いのブラウザは通知に対応していません');
+    return;
+  }
+  Notification.requestPermission().then(perm => {
+    if (perm === 'granted') {
+      localStorage.setItem('cf-notif-enabled', '1');
+      updateNotifStatus();
+      checkCardNotifications();
+      alert('通知を有効にしました！\n※このアプリを開いたタイミングで、引き落とし日が近いカードがあればお知らせする仕組みです（アプリを閉じている間の通知には対応していません）');
+    } else {
+      alert('通知が許可されませんでした。ブラウザの設定から通知を許可してください。');
+    }
+  });
+}
+
+function checkCardNotifications() {
+  if (!('Notification' in window)) return;
+  if (localStorage.getItem('cf-notif-enabled') !== '1') return;
+  if (Notification.permission !== 'granted') return;
+
+  const todayKey = getTodayKey();
+  if (localStorage.getItem('cf-notif-last-check') === todayKey) return; // 1日1回だけ
+
+  const b = loadBalance();
+  const now = new Date();
+  const upcoming = (b.cards || []).filter(c => {
+    const diff = c.day - now.getDate();
+    return diff >= 0 && diff <= 3;
+  });
+
+  if (upcoming.length > 0) {
+    const body = upcoming.map(c => `${c.name}（${c.day}日）`).join('、') + ' の引き落としが近づいています。';
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.showNotification('💳 引き落とし日が近づいています', { body, icon: 'icon-192.png' });
+      }).catch(() => { new Notification('💳 引き落とし日が近づいています', { body }); });
+    } else {
+      new Notification('💳 引き落とし日が近づいています', { body });
+    }
+  }
+  localStorage.setItem('cf-notif-last-check', todayKey);
+}
+
+// ---- ファクタリング手数料比較 ----
+function loadFactoring() {
+  try { return JSON.parse(localStorage.getItem('cf-factoring-v1')) || []; } catch(e) { return []; }
+}
+function saveFactoring(list) { localStorage.setItem('cf-factoring-v1', JSON.stringify(list)); }
+
+function addFactoring() {
+  const nameEl = document.getElementById('factoring-name');
+  const feeEl = document.getElementById('factoring-fee');
+  const name = nameEl.value.trim();
+  const fee = parseFloat(feeEl.value);
+  if (!name || isNaN(fee) || fee < 0 || fee > 100) {
+    feeEl.style.borderColor = 'var(--red)';
+    setTimeout(() => { feeEl.style.borderColor = ''; }, 1000);
+    return;
+  }
+  const list = loadFactoring();
+  list.push({ id: Date.now(), name, fee });
+  saveFactoring(list);
+  nameEl.value = ''; feeEl.value = '';
+  renderFactoringList();
+  renderFactoringComparison();
+}
+
+function deleteFactoring(id) {
+  saveFactoring(loadFactoring().filter(f => f.id !== id));
+  renderFactoringList();
+  renderFactoringComparison();
+}
+
+function renderFactoringList() {
+  const el = document.getElementById('factoring-list');
+  if (!el) return;
+  const list = loadFactoring();
+  el.innerHTML = list.length ? list.map(f => `
+    <div class="entry">
+      <span class="entry-name">${f.name}</span>
+      <span style="font-family:var(--mono);font-size:13px;color:var(--mp)">手数料 ${f.fee}%</span>
+      <button class="del-btn" onclick="deleteFactoring(${f.id})" title="削除">×</button>
+    </div>`).join('') : '<div class="empty">ファクタリング会社が登録されていません</div>';
+}
+
+function renderFactoringComparison() {
+  const el = document.getElementById('factoring-comparison');
+  if (!el) return;
+  const list = loadFactoring();
+  const amountEl = document.getElementById('factoring-sim-amount');
+  const amount = parseFloat(amountEl ? amountEl.value : '') || 0;
+
+  if (list.length === 0) { el.innerHTML = ''; return; }
+  if (amount <= 0) { el.innerHTML = '<div class="empty">売掛金額を入力してください</div>'; return; }
+
+  const results = list.map(f => ({
+    name: f.name, fee: f.fee,
+    feeAmount: Math.round(amount * f.fee / 100),
+    received: Math.round(amount * (1 - f.fee / 100))
+  })).sort((a,b) => b.received - a.received);
+
+  el.innerHTML = results.map((r, i) => `
+    <div class="entry" style="${i===0?'border-color:var(--green);background:#001a0d':''}">
+      <span class="entry-name">${i===0?'👑 ':''}${r.name}</span>
+      <span style="font-size:11px;color:var(--text-hint)">手数料 -${fmt(r.feeAmount)}</span>
+      <span class="entry-amount inc" style="color:${i===0?'var(--green)':'var(--text)'}">${fmt(r.received)}</span>
+    </div>`).join('');
+}
+
+// ---- 借金完済シミュレーター ----
+function renderPayoffSim() {
+  const el = document.getElementById('payoff-sim');
+  if (!el) return;
+  const b = loadBalance();
+  const loanBalance = (b.loans||[]).reduce((s,l)=>s+l.balance,0);
+  const cardDebt = (b.cards||[]).reduce((s,c)=>s+(c.debt||0),0);
+  const totalDebt = loanBalance + cardDebt;
+  const loanMonthly = (b.loans||[]).reduce((s,l)=>s+l.monthly,0);
+  const extraEl = document.getElementById('payoff-extra');
+  const extra = extraEl ? (parseFloat(extraEl.value) || 0) : 0;
+  const monthlyPayment = loanMonthly + extra;
+
+  if (totalDebt <= 0) {
+    el.innerHTML = `<div style="text-align:center;padding:20px;color:var(--green);font-size:14px">🎉 登録されている借金・分割残債はありません！</div>`;
+    return;
+  }
+  if (monthlyPayment <= 0) {
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">現在の借金・分割残債の合計：<span style="color:var(--red);font-family:var(--mono)">${fmt(totalDebt)}</span></div>
+      <div style="font-size:12px;color:var(--gold)">月々の返済額が設定されていないため、完済時期を計算できません。「ローン・借金」を登録するか、追加返済額を入力してください。</div>
+    `;
+    return;
+  }
+
+  const months = Math.ceil(totalDebt / monthlyPayment);
+  const now = new Date();
+  const payoffDate = new Date(now.getFullYear(), now.getMonth() + months, 1);
+  const years = Math.floor(months / 12);
+  const remMonths = months % 12;
+  const durationText = years > 0 ? `${years}年${remMonths}ヶ月` : `${remMonths}ヶ月`;
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">
+      <div>
+        <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">借金・分割残債の合計</div>
+        <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--red)">${fmt(totalDebt)}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">月々の返済ペース</div>
+        <div style="font-size:18px;font-weight:700;font-family:var(--mono);color:var(--mp)">${fmt(monthlyPayment)}</div>
+      </div>
+    </div>
+    <div style="border-top:2px solid var(--border);padding-top:12px;text-align:center">
+      <div style="font-size:10px;color:var(--text-hint);letter-spacing:.8px;margin-bottom:6px">🏁 完済まで あと</div>
+      <div style="font-family:'Press Start 2P',monospace;font-size:20px;color:var(--gold);text-shadow:2px 2px 0 var(--gold-dark);margin-bottom:6px">${durationText}</div>
+      <div style="font-size:12px;color:var(--text-muted)">完済予定：${payoffDate.getFullYear()}年${payoffDate.getMonth()+1}月ごろ</div>
+    </div>
+    ${extra > 0 ? `<div style="margin-top:10px;font-size:11px;color:var(--green);text-align:center">💪 追加返済 ${fmt(extra)}/月 を含めた試算です</div>` : ''}
+    <div style="margin-top:10px;font-size:10px;color:var(--text-hint);text-align:center">※ 金利・手数料は考慮しない簡易計算です</div>
+  `;
+}
+
+// ---- 支出・収入名のオートコンプリート ----
+function updateNameAutocomplete() {
+  ['personal','business'].forEach(mode => {
+    const p = mode === 'business' ? 'b' : 'p';
+    const incNames = new Set(), expNames = new Set();
+    Object.values(state[mode].entries || {}).forEach(arr => {
+      arr.forEach(e => {
+        if (e.type === 'income') incNames.add(e.name);
+        else expNames.add(e.name);
+      });
+    });
+    const incList = document.getElementById(`${p}-inc-namelist`);
+    const expList = document.getElementById(`${p}-exp-namelist`);
+    if (incList) incList.innerHTML = [...incNames].map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+    if (expList) expList.innerHTML = [...expNames].map(n => `<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+  });
+}
+
+// ---- 固定費テンプレート ----
+function loadTemplates() {
+  try { return JSON.parse(localStorage.getItem('cf-templates-v1')) || []; } catch(e) { return []; }
+}
+function saveTemplates(list) { localStorage.setItem('cf-templates-v1', JSON.stringify(list)); }
+
+function saveAsTemplate(mode, type) {
+  const isInc = type === 'income';
+  const p = mode === 'business' ? 'b' : 'p';
+  const t = isInc ? 'inc' : 'exp';
+  const nameEl = document.getElementById(`${p}-${t}-name`);
+  const amountEl = document.getElementById(`${p}-${t}-amount`);
+  const catEl = document.getElementById(`${p}-${t}-cat`);
+  const accEl = document.getElementById(`${p}-${t}-account`);
+  const name = nameEl.value.trim();
+  const amount = parseFloat(amountEl.value);
+  if (!name || isNaN(amount) || amount <= 0) {
+    alert('内容と金額を入力してから「📌」を押してください');
+    return;
+  }
+  const list = loadTemplates();
+  list.push({
+    id: Date.now(), mode, type,
+    name, amount, cat: catEl.value,
+    paymentRaw: accEl ? accEl.value : ''
+  });
+  saveTemplates(list);
+  alert(`「${name}」を固定費テンプレートに登録しました！`);
+  renderAll();
+}
+
+function addFromTemplate(id) {
+  const tpl = loadTemplates().find(t => t.id === id);
+  if (!tpl) return;
+  const { mode, type } = tpl;
+  const { month, year } = state[mode];
+  const entries = getEntries(mode, year, month);
+  const isInc = type === 'income';
+  const entry = { id: Date.now(), name: tpl.name, amount: tpl.amount, type, cat: tpl.cat };
+  entry.date = getTodayKey();
+  if (!isInc) entry.paid = true;
+
+  if (tpl.paymentRaw && tpl.paymentRaw.startsWith('acc-')) {
+    const accId = parseInt(tpl.paymentRaw.slice(4));
+    const b = loadBalance();
+    const acc = b.accounts.find(a => a.id === accId);
+    if (acc) {
+      entry.accountId = accId;
+      entry.accountName = acc.name;
+      acc.balance += isInc ? tpl.amount : -tpl.amount;
+      saveBalance(b);
+      entry.balanceApplied = true;
+    }
+  } else if (tpl.paymentRaw && tpl.paymentRaw.startsWith('card-')) {
+    const cardId = parseInt(tpl.paymentRaw.slice(5));
+    const b = loadBalance();
+    const card = (b.cards || []).find(c => c.id === cardId);
+    if (card) { entry.cardId = cardId; entry.cardName = card.name; }
+  }
+
+  entries.unshift(entry);
+  setEntries(mode, year, month, entries);
+  awardDailyXP();
+  renderAll();
+}
+
+function deleteTemplate(id) {
+  saveTemplates(loadTemplates().filter(t => t.id !== id));
+  renderAll();
+}
+
+function renderTemplates(mode) {
+  const el = document.getElementById(`${mode}-templates`);
+  if (!el) return;
+  const list = loadTemplates().filter(t => t.mode === mode);
+  el.innerHTML = list.length ? list.map(t => `
+    <div class="entry">
+      <span class="entry-cat ${t.type==='income'?'cat-inc':'cat-exp'}">${t.type==='income'?'収入':'支出'}</span>
+      <span class="entry-name">${t.name}<span class="acc-badge">${t.cat}</span></span>
+      <span class="entry-amount ${t.type==='income'?'inc':'exp'}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</span>
+      <button class="del-btn" style="color:var(--mp)" onclick="addFromTemplate(${t.id})" title="今月分として追加">➕</button>
+      <button class="del-btn" onclick="deleteTemplate(${t.id})" title="テンプレ削除">×</button>
+    </div>`).join('') : '';
+}
+
+// ---- ︙ コンテキストメニュー ----
+let ctxState = { mode: null, id: null };
+
+function openCtxMenu(e, mode, id) {
+  e.stopPropagation();
+  ctxState = { mode, id };
+  const menu = document.getElementById('ctx-menu');
+  menu.classList.add('open');
+  const x = Math.min(e.clientX, window.innerWidth - 160);
+  const y = Math.min(e.clientY, window.innerHeight - 130);
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+}
+
+function closeCtxMenu() {
+  document.getElementById('ctx-menu').classList.remove('open');
+}
+
+document.addEventListener('click', closeCtxMenu);
+document.addEventListener('keydown', e => { if(e.key==='Escape'){ closeCtxMenu(); closeModal(); } });
+
+function getCtxEntry() {
+  const { mode, id } = ctxState;
+  const { month, year } = state[mode];
+  return getEntries(mode, year, month).find(e => e.id === id);
+}
+
+// ---- 削除の取り消し（アンドゥ） ----
+let undoAction = null;
+let undoTimer = null;
+
+function showUndoToast(message, undoFn) {
+  undoAction = undoFn;
+  clearTimeout(undoTimer);
+  document.getElementById('undo-toast-text').textContent = message;
+  document.getElementById('undo-toast').classList.add('show');
+  undoTimer = setTimeout(() => {
+    document.getElementById('undo-toast').classList.remove('show');
+    undoAction = null;
+  }, 6000);
+}
+
+function performUndo() {
+  if (undoAction) { undoAction(); undoAction = null; }
+  document.getElementById('undo-toast').classList.remove('show');
+  clearTimeout(undoTimer);
+}
+
+function ctxDelete() {
+  const { mode, id } = ctxState;
+  const entry = getCtxEntry();
+  if (!entry) { closeCtxMenu(); return; }
+  const { month, year } = state[mode];
+
+  // 口座と連動していて、かつ実際に残高へ反映済みの場合のみ、残高を戻す
+  let balanceReversed = false;
+  if (entry.accountId && entry.balanceApplied !== false) {
+    const b = loadBalance();
+    const acc = b.accounts.find(a => a.id === entry.accountId);
+    if (acc) { acc.balance += (entry.type === 'income' ? -entry.amount : entry.amount); saveBalance(b); balanceReversed = true; }
+  }
+  setEntries(mode, year, month, getEntries(mode, year, month).filter(e => e.id !== id));
+  closeCtxMenu();
+  renderAll();
+
+  showUndoToast(`「${entry.name}」を削除しました`, () => {
+    const curEntries = getEntries(mode, year, month);
+    curEntries.unshift(entry);
+    setEntries(mode, year, month, curEntries);
+    if (balanceReversed) {
+      const b = loadBalance();
+      const acc = b.accounts.find(a => a.id === entry.accountId);
+      if (acc) { acc.balance += (entry.type === 'income' ? entry.amount : -entry.amount); saveBalance(b); }
+    }
+    renderAll();
+  });
+}
+
+function ctxCopy() {
+  const entry = getCtxEntry();
+  if (!entry) return;
+  const { mode } = ctxState;
+  const { month, year } = state[mode];
+  const copy = { ...entry, id: Date.now(), name: entry.name + '（コピー）' };
+  // コピー時は口座引き落としリンクは外す（残高の二重減算防止）。クレカ紐付けはそのまま維持
+  delete copy.accountId; delete copy.accountName;
+  const entries = getEntries(mode, year, month);
+  entries.unshift(copy);
+  setEntries(mode, year, month, entries);
+  closeCtxMenu();
+  renderAll();
+}
+
+function ctxEdit() {
+  const entry = getCtxEntry();
+  if (!entry) return;
+  document.getElementById('edit-date').value = entry.date || '';
+  document.getElementById('edit-name').value = entry.name;
+  document.getElementById('edit-amount').value = entry.amount;
+  document.getElementById('edit-cat').value = entry.cat;
+  const sw = document.getElementById('edit-status-wrap');
+  if (entry.status !== undefined) {
+    sw.style.display = 'block';
+    document.getElementById('edit-status').value = entry.status;
+  } else {
+    sw.style.display = 'none';
+  }
+  // 支払い方法セレクトの初期化（収入=口座のみ、支出=口座+クレカ）
+  const b = loadBalance();
+  const accSel = document.getElementById('edit-account');
+  const accOpts = b.accounts.map(a => `<option value="acc-${a.id}">🏦 ${a.name}（${fmt(a.balance)}）</option>`).join('');
+  if (entry.type === 'income') {
+    accSel.innerHTML = '<option value="">なし</option>' + accOpts;
+  } else {
+    const cardOpts = (b.cards || []).map(c => `<option value="card-${c.id}">💳 ${c.name}</option>`).join('');
+    accSel.innerHTML = '<option value="">なし</option>' + accOpts + cardOpts;
+  }
+  accSel.value = entry.accountId ? `acc-${entry.accountId}` : (entry.cardId ? `card-${entry.cardId}` : '');
+  document.getElementById('edit-account-label').textContent = entry.type === 'income' ? '入金先' : '支払い方法';
+  // 支払済みチェックボックス（支出のみ）
+  const paidWrap = document.getElementById('edit-paid-wrap');
+  if (entry.type === 'expense') {
+    paidWrap.style.display = 'flex';
+    document.getElementById('edit-paid').checked = entry.paid !== false;
+  } else {
+    paidWrap.style.display = 'none';
+  }
+  closeCtxMenu();
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+}
+
+function saveEdit() {
+  const { mode, id } = ctxState;
+  const { month, year } = state[mode];
+  const entries = getEntries(mode, year, month);
+  const idx = entries.findIndex(e => e.id === id);
+  if (idx === -1) { closeModal(); return; }
+  const entry = entries[idx];
+  const newAmount = parseFloat(document.getElementById('edit-amount').value);
+  const accSel = document.getElementById('edit-account');
+  const rawVal = accSel.value;
+  const newAccId = rawVal.startsWith('acc-') ? parseInt(rawVal.slice(4)) : null;
+  const newCardId = rawVal.startsWith('card-') ? parseInt(rawVal.slice(5)) : null;
+  const oldAccId = entry.accountId || null;
+  const sign = entry.type === 'income' ? 1 : -1;
+
+  // 支払済みチェック（支出のみ存在）。収入は常に「反映済み」として扱う
+  const newPaid = entry.type === 'expense'
+    ? document.getElementById('edit-paid').checked
+    : true;
+
+  // 「実際に残高へ反映されていたか」を旧・新それぞれ判定
+  const wasApplied = !!oldAccId && entry.balanceApplied !== false;
+  const willBeApplied = !!newAccId && newPaid !== false;
+
+  if (wasApplied || willBeApplied) {
+    const b = loadBalance();
+    if (wasApplied) {
+      const oldAcc = b.accounts.find(a => a.id === oldAccId);
+      if (oldAcc) oldAcc.balance -= sign * entry.amount; // 旧エントリの影響を取り消す
+    }
+    if (willBeApplied) {
+      const newAcc = b.accounts.find(a => a.id === newAccId);
+      if (newAcc) newAcc.balance += sign * newAmount; // 新エントリの影響を反映
+    }
+    saveBalance(b);
+  }
+
+  let accountName, cardName;
+  if (newAccId) {
+    const b = loadBalance();
+    const acc = b.accounts.find(a => a.id === newAccId);
+    accountName = acc ? acc.name : undefined;
+  }
+  if (newCardId) {
+    const b = loadBalance();
+    const card = (b.cards || []).find(c => c.id === newCardId);
+    cardName = card ? card.name : undefined;
+  }
+
+  entries[idx] = {
+    ...entry,
+    date: document.getElementById('edit-date').value,
+    name: document.getElementById('edit-name').value.trim(),
+    amount: newAmount,
+    cat: document.getElementById('edit-cat').value.trim(),
+    ...(entry.status !== undefined ? { status: document.getElementById('edit-status').value } : {}),
+    ...(entry.type === 'expense' ? { paid: newPaid } : {})
+  };
+  delete entries[idx].accountId; delete entries[idx].accountName;
+  delete entries[idx].cardId; delete entries[idx].cardName;
+  delete entries[idx].balanceApplied;
+  if (newAccId) {
+    entries[idx].accountId = newAccId;
+    entries[idx].accountName = accountName;
+    entries[idx].balanceApplied = willBeApplied;
+  }
+  if (newCardId) { entries[idx].cardId = newCardId; entries[idx].cardName = cardName; }
+  setEntries(mode, year, month, entries);
+  closeModal();
+  renderAll();
+}
+
+function renderMetrics(mode) {
+  const { month, year } = state[mode];
+  const entries = getEntries(mode, year, month);
+  const inc = entries.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const exp = entries.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+  const net = inc - exp;
+  const isBiz = mode === 'business';
+  document.getElementById(`${mode}-month-label`).textContent = `${year}年 ${MONTHS[month]}`;
+  document.getElementById(`${mode}-metrics`).innerHTML = `
+    <div class="metric"><div class="metric-label">${isBiz?'💰 売上':'💰 収入'}</div><div class="metric-value pos">${fmt(inc)}</div></div>
+    <div class="metric"><div class="metric-label">${isBiz?'🧾 経費':'🧾 支出'}</div><div class="metric-value neg">${fmt(exp)}</div></div>
+    <div class="metric"><div class="metric-label">✨ 収支差額</div><div class="metric-value ${net>=0?'pos':'neg'}">${net>=0?'+':''}${fmt(net)}</div></div>
+  `;
+  if (mode === 'personal') renderDailyAllowance(year, month, exp);
+}
+
+// ---- 1日あたりの使える金額 ----
+function renderDailyAllowance(year, month, exp) {
+  const el = document.getElementById('daily-allowance-card');
+  if (!el) return;
+  const budget = loadBudget();
+  if (!budget.exp) { el.innerHTML = ''; return; }
+
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const remainingDays = isCurrentMonth ? Math.max(daysInMonth - today.getDate() + 1, 1) : daysInMonth;
+  const remainingBudget = budget.exp - exp;
+  const dailyAllowance = Math.floor(remainingBudget / remainingDays);
+
+  const isOver = remainingBudget < 0;
+  const isLow = !isOver && dailyAllowance < 1000;
+
+  el.innerHTML = `
+    <div class="card" style="border-color:${isOver?'var(--red)':isLow?'var(--gold)':'var(--green)'};padding:14px 18px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.8px">${isCurrentMonth?`本日から月末（あと${remainingDays}日）`:'月内'}で使える目安</div>
+          <div style="font-family:'Press Start 2P',monospace;font-size:18px;margin-top:4px;color:${isOver?'var(--red)':isLow?'var(--gold)':'var(--green)'}">
+            ${isOver ? `超過中 ${fmt(Math.abs(remainingBudget))}` : `1日${fmt(dailyAllowance)}`}
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);text-align:right">
+          支出上限 ${fmt(budget.exp)}<br>
+          残り ${fmt(Math.max(remainingBudget,0))}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderEntries(mode) {
+  const { month, year } = state[mode];
+  const entries = getEntries(mode, year, month);
+  const el = document.getElementById(`${mode}-entries`);
+  if (!entries.length) { el.innerHTML = ''; return; }
+  el.innerHTML = entries.map(e => `
+    <div class="entry">
+      ${e.date ? `<span style="font-size:11px;color:var(--text-hint);font-family:var(--mono);white-space:nowrap">${e.date.slice(5).replace('-','/')}</span>` : ''}
+      <span class="entry-cat ${e.type==='income'?'cat-inc':'cat-exp'}">${e.cat}</span>
+      <span class="entry-name">${e.name}${e.status ? `<span class="entry-status ${e.status==='入金済'?'status-done':e.status==='請求済'?'status-billed':'status-pending'}">${e.status}</span>` : ''}${e.paid === false ? `<span class="entry-status status-pending">未払い</span>` : ''}${e.accountName ? `<span class="acc-badge">🏦${e.accountName}</span>` : ''}${e.cardName ? `<span class="acc-badge" style="border-color:var(--gold);color:var(--gold)">💳${e.cardName}</span>` : ''}</span>
+      <span class="entry-amount ${e.type==='income'?'inc':'exp'}">${e.type==='income'?'+':'-'}${fmt(e.amount)}</span>
+      <button class="del-btn" onclick="openCtxMenu(event,'${mode}',${e.id})" title="メニュー">︙</button>
+    </div>
+  `).join('');
+}
+
+function getMonthRange(baseYear, baseMonth, count) {
+  const r = [];
+  for (let i = count-1; i >= 0; i--) {
+    let m = baseMonth - i, y = baseYear;
+    while (m < 0) { m += 12; y--; }
+    r.push({ year: y, month: m });
+  }
+  return r;
+}
+
+const charts = {};
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+function renderBarChart(id, labels, ds1, ds2, label1='収入', label2='支出') {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label: label1, data: ds1, backgroundColor: '#44ff88', borderRadius: 0 },
+      { label: label2, data: ds2, backgroundColor: '#ff4444', borderRadius: 0 }
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#6666aa', font: { size: 10, family: 'DotGothic16, monospace' } } },
+        y: { grid: { color: 'rgba(102,102,255,0.15)' }, ticks: { color: '#6666aa', callback: v => (v/10000).toFixed(0)+'万', font: { size: 10, family: 'DotGothic16, monospace' } } }
+      }
+    }
+  });
+}
+
+function renderLineBarChart(id, labels, incomes, expenses, nets) {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar', label: '収入', data: incomes, backgroundColor: '#44ff88', borderRadius: 0, order: 2 },
+        { type: 'bar', label: '支出', data: expenses, backgroundColor: '#ff4444', borderRadius: 0, order: 2 },
+        { type: 'line', label: '純収支', data: nets, borderColor: '#ffdd44', backgroundColor: 'rgba(255,221,68,0.06)', tension: 0.3, pointRadius: 4, pointBackgroundColor: '#ffdd44', fill: true, order: 1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#6666aa', font: { size: 10, family: 'DotGothic16, monospace' } } },
+        y: { grid: { color: 'rgba(102,102,255,0.15)' }, ticks: { color: '#6666aa', callback: v => (v/10000).toFixed(0)+'万', font: { size: 10, family: 'DotGothic16, monospace' } } }
+      }
+    }
+  });
+}
+
+function renderPieChart(id, labels, data) {
+  destroyChart(id);
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const palette = ['#5DCAA5','#7F77DD','#FAC775','#F09595','#85B7EB','#ED93B1','#97C459','#5BA3C9','#D4A276'];
+  const total = data.reduce((s,v)=>s+v,0);
+  if (!total) {
+    charts[id] = new Chart(ctx, { type: 'doughnut', data: { labels:['データなし'], datasets:[{data:[1],backgroundColor:['#E8E6DF']}] }, options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}} } });
+    return;
+  }
+  charts[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: palette.slice(0,data.length), borderWidth: 2, borderColor: '#fff' }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, position: 'bottom', labels: { font: { size: 10, family: 'Noto Sans JP' }, boxWidth: 10, boxHeight: 10, padding: 8 } } }
+    }
+  });
+}
+
+function renderOverview() {
+  const pm = state.personal.month, py = state.personal.year;
+  const bm = state.business.month, by = state.business.year;
+  const pE = getEntries('personal', py, pm);
+  const bE = getEntries('business', by, bm);
+  const pInc = pE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const pExp = pE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+  const bInc = bE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const bExp = bE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+  const totalInc = pInc + bInc, totalExp = pExp + bExp, net = totalInc - totalExp;
+  const rate = totalInc > 0 ? Math.round(net/totalInc*100) : 0;
+
+  document.getElementById('overview-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">💰 総収入</div><div class="metric-value pos">${fmt(totalInc)}</div></div>
+    <div class="metric"><div class="metric-label">🧾 総支出</div><div class="metric-value neg">${fmt(totalExp)}</div></div>
+    <div class="metric"><div class="metric-label">✨ 純収支</div><div class="metric-value ${net>=0?'pos':'neg'}">${net>=0?'+':''}${fmt(net)}</div></div>
+    <div class="metric" style="grid-column:span 1"><div class="metric-label">⭐ 貯蓄率</div><div class="metric-value" style="color:var(--gold)">${rate}%</div></div>
+  `;
+
+  const months = getMonthRange(py, pm, 6);
+  const labels = months.map(({month:m}) => MONTHS[m]);
+  const totalIncomes = months.map(({year:y,month:m}) => {
+    const pe = getEntries('personal',y,m).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+    const be = getEntries('business',y,m).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+    return pe+be;
+  });
+  const totalExpenses = months.map(({year:y,month:m}) => {
+    const pe = getEntries('personal',y,m).filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+    const be = getEntries('business',y,m).filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+    return pe+be;
+  });
+  const nets = totalIncomes.map((v,i) => v - totalExpenses[i]);
+  renderLineBarChart('overview-chart', labels, totalIncomes, totalExpenses, nets);
+
+  const pCats = {}, bCats = {};
+  pE.filter(e=>e.type==='expense').forEach(e=>{ pCats[e.cat]=(pCats[e.cat]||0)+e.amount; });
+  bE.filter(e=>e.type==='expense').forEach(e=>{ bCats[e.cat]=(bCats[e.cat]||0)+e.amount; });
+  renderPieChart('personal-pie', Object.keys(pCats), Object.values(pCats));
+  renderPieChart('business-pie', Object.keys(bCats), Object.values(bCats));
+
+  const bInvoiced = bE.filter(e=>e.type==='income'&&e.status==='請求済').reduce((s,e)=>s+e.amount,0);
+  const bPending = bE.filter(e=>e.type==='income'&&e.status==='未請求').reduce((s,e)=>s+e.amount,0);
+  document.getElementById('summary-table').innerHTML = `
+    <table class="summary-table">
+      <tr><td style="color:var(--text-muted)">家計収入</td><td style="color:var(--green)">${fmt(pInc)}</td></tr>
+      <tr><td style="color:var(--text-muted)">フリーランス売上（請求済）</td><td style="color:var(--green)">${fmt(bInvoiced)}</td></tr>
+      <tr><td style="color:var(--text-muted)">フリーランス売上（未請求）</td><td style="color:#7A5C00">${fmt(bPending)}</td></tr>
+      <tr><td style="color:var(--text-muted)">家計支出</td><td style="color:var(--red)">${fmt(pExp)}</td></tr>
+      <tr><td style="color:var(--text-muted)">事業経費</td><td style="color:var(--red)">${fmt(bExp)}</td></tr>
+      <tr class="total-row"><td>手取り純収支</td><td style="color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</td></tr>
+    </table>
+  `;
+
+  renderAIReview({ py, pm, pCats, bCats, pInc, pExp, bInc, bExp, totalInc, totalExp, net, rate });
+  renderDailyPaceChart(py, pm, pE, bE);
+  renderWeekdayChart();
+}
+
+// ---- 日別支出ペース（累積） ----
+function renderDailyPaceChart(year, month, pE, bE) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const allExpenses = [...pE, ...bE].filter(e => e.type === 'expense' && e.date);
+  const dailyTotals = new Array(daysInMonth + 1).fill(0);
+  allExpenses.forEach(e => {
+    const day = parseInt(e.date.slice(8, 10));
+    if (day >= 1 && day <= daysInMonth) dailyTotals[day] += e.amount;
+  });
+  const cumulative = [];
+  let running = 0;
+  for (let d = 1; d <= daysInMonth; d++) { running += dailyTotals[d]; cumulative.push(running); }
+
+  // 参考ライン：今日までの実績ペースを月末まで単純に延長した場合の予測線
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+  const todayDay = isCurrentMonth ? today.getDate() : daysInMonth;
+  const paceSoFar = cumulative[Math.min(todayDay, daysInMonth) - 1] || 0;
+  const projectedTotal = todayDay > 0 ? (paceSoFar / todayDay) * daysInMonth : 0;
+  const projectionLine = cumulative.map((_, i) => {
+    const d = i + 1;
+    if (d <= todayDay) return null; // 実績部分は表示しない（実線と重複させない）
+    return Math.round((paceSoFar / todayDay) * d);
+  });
+
+  destroyChart('daily-pace-chart');
+  const ctx = document.getElementById('daily-pace-chart');
+  if (!ctx) return;
+  charts['daily-pace-chart'] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: cumulative.map((_,i) => `${i+1}日`),
+      datasets: [
+        { label: '累積支出（実績）', data: cumulative, borderColor: '#ff4444', backgroundColor: 'rgba(255,68,68,0.08)', tension: 0.2, pointRadius: 0, fill: true },
+        { label: 'このペースの予測', data: projectionLine, borderColor: '#ffdd44', borderDash: [6,4], tension: 0.2, pointRadius: 0, fill: false }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#6666aa', font: { size: 9, family: 'DotGothic16, monospace' }, maxTicksLimit: 8 } },
+        y: { grid: { color: 'rgba(102,102,255,0.15)' }, ticks: { color: '#6666aa', callback: v => (v/10000).toFixed(0)+'万', font: { size: 10, family: 'DotGothic16, monospace' } } }
+      }
+    }
+  });
+}
+
+// ---- 曜日別の支出傾向 ----
+function renderWeekdayChart() {
+  const { month, year } = state.personal;
+  const months = getMonthRange(year, month, 3);
+  const weekdayTotals = new Array(7).fill(0);
+  const weekdayCounts = new Array(7).fill(0);
+
+  months.forEach(({year:y, month:m}) => {
+    const entries = [...getEntries('personal', y, m), ...getEntries('business', y, m)]
+      .filter(e => e.type === 'expense' && e.date);
+    entries.forEach(e => {
+      const d = new Date(e.date);
+      if (isNaN(d.getTime())) return;
+      const wd = d.getDay(); // 0=日,1=月,...6=土
+      weekdayTotals[wd] += e.amount;
+    });
+    // 各曜日が月に何回出現したか（平均を出すため）
+    const daysInMonth = new Date(y, m + 1, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const wd = new Date(y, m, day).getDay();
+      weekdayCounts[wd]++;
+    }
+  });
+
+  const labels = ['日','月','火','水','木','金','土'];
+  const averages = weekdayTotals.map((total, i) => weekdayCounts[i] > 0 ? Math.round(total / weekdayCounts[i]) : 0);
+  const maxIdx = averages.indexOf(Math.max(...averages));
+
+  destroyChart('weekday-chart');
+  const ctx = document.getElementById('weekday-chart');
+  if (!ctx) return;
+  charts['weekday-chart'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: '平均支出',
+        data: averages,
+        backgroundColor: labels.map((_,i) => i === maxIdx ? '#ffdd44' : (i===0||i===6) ? '#ff8866' : '#44ff88'),
+        borderRadius: 0
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#6666aa', font: { size: 11, family: 'DotGothic16, monospace' } } },
+        y: { grid: { color: 'rgba(102,102,255,0.15)' }, ticks: { color: '#6666aa', callback: v => (v/1000).toFixed(0)+'千', font: { size: 10, family: 'DotGothic16, monospace' } } }
+      }
+    }
+  });
+}
+
+// ---- 今月の総評（ルールベース自動生成） ----
+const SPENDY_CATS = ['食費', '娯楽・外食', '交際費', '会議費']; // 「無駄遣い」判定の対象カテゴリ
+
+function renderAIReview(ctx) {
+  const { py, pm, pCats, bCats, pInc, pExp, bInc, bExp, totalInc, totalExp, net, rate } = ctx;
+
+  // カテゴリを金額順に並べる（家計・事業それぞれ）
+  const pSorted = Object.entries(pCats).sort((a,b) => b[1]-a[1]);
+  const bSorted = Object.entries(bCats).sort((a,b) => b[1]-a[1]);
+  const topP = pSorted[0]; // [カテゴリ名, 金額]
+  const topPPct = topP && pExp > 0 ? Math.round(topP[1]/pExp*100) : 0;
+
+  // 前月との比較
+  let prevM = pm - 1, prevY = py;
+  if (prevM < 0) { prevM = 11; prevY--; }
+  const prevPE = getEntries('personal', prevY, prevM).filter(e=>e.type==='expense');
+  const prevBE = getEntries('business', prevY, prevM).filter(e=>e.type==='expense');
+  const prevExp = prevPE.reduce((s,e)=>s+e.amount,0) + prevBE.reduce((s,e)=>s+e.amount,0);
+  const hasPrevData = (prevPE.length + prevBE.length) > 0;
+  const expChangePct = hasPrevData && prevExp > 0 ? Math.round((totalExp - prevExp)/prevExp*100) : null;
+
+  // 「無駄遣い」判定：食費・娯楽・交際費などの合計が家計支出に占める割合
+  const spendyTotal = pSorted.filter(([cat]) => SPENDY_CATS.includes(cat)).reduce((s,[,amt])=>s+amt,0);
+  const spendyPct = pExp > 0 ? Math.round(spendyTotal/pExp*100) : 0;
+
+  const comments = [];
+
+  // 総評の書き出し
+  if (net >= 0) {
+    comments.push(`今月は<span style="color:var(--green)">黒字（+${fmt(net)}）</span>でした。よくがんばりました！`);
+  } else {
+    comments.push(`今月は<span style="color:var(--red)">赤字（${fmt(net)}）</span>でした。来月は少し引き締めが必要かもしれません。`);
+  }
+
+  // 貯蓄率コメント
+  if (totalInc > 0) {
+    if (rate >= 20) comments.push(`貯蓄率は<span style="color:var(--gold)">${rate}%</span>と優秀な水準です。`);
+    else if (rate >= 0) comments.push(`貯蓄率は${rate}%でした。理想は20%以上と言われているので、少し余地がありそうです。`);
+  }
+
+  // トップカテゴリの指摘
+  if (topP && topPPct >= 25) {
+    comments.push(`家計の支出では「<strong>${topP[0]}</strong>」が全体の<span style="color:var(--gold)">${topPPct}%</span>（${fmt(topP[1])}）を占めていて、一番のウェイトになっています。`);
+  }
+
+  // 無駄遣い系カテゴリの指摘（コンビニ・外食など）
+  if (spendyPct >= 30) {
+    comments.push(`食費・外食・交際費まわりの支出が家計支出の<span style="color:var(--red)">${spendyPct}%</span>を占めています。コンビニやスーパーでのちょこちょこ買いが積み重なっているかもしれません。`);
+  }
+
+  // 前月比
+  if (expChangePct !== null) {
+    if (expChangePct > 15) comments.push(`先月と比べて支出が<span style="color:var(--red)">${expChangePct}%増加</span>しています。何か特別な出費があったか振り返ってみましょう。`);
+    else if (expChangePct < -15) comments.push(`先月と比べて支出が<span style="color:var(--green)">${Math.abs(expChangePct)}%減少</span>しました。良い傾向です！`);
+  }
+
+  // 来月に向けてのアドバイス
+  const advice = [];
+  if (spendyPct >= 30) advice.push('コンビニ・外食は「週◯回まで」と回数を決めておくと、無意識の出費を減らしやすいです。');
+  if (rate < 10 && totalInc > 0) advice.push('先取り貯蓄（給料日に自動で一定額を別口座に移す）を試すと、貯蓄率が安定しやすくなります。');
+  if (topP && topPPct >= 25 && !SPENDY_CATS.includes(topP[0])) advice.push(`「${topP[0]}」の内訳を見直して、固定費化できるものがないか確認してみましょう。`);
+  if (advice.length === 0) advice.push('今のペースを維持しつつ、突発的な出費に備えて予備費を確保しておくと安心です。');
+
+  const el = document.getElementById('ai-review');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="font-size:13px;line-height:2;color:var(--text);margin-bottom:14px">
+      ${comments.map(c => `<div>・${c}</div>`).join('')}
+    </div>
+    <div style="border-top:2px solid var(--border);padding-top:12px">
+      <div style="color:var(--gold);text-shadow:1px 1px 0 var(--gold-dark);margin-bottom:8px;font-family:'Press Start 2P',monospace;font-size:9px">▶ らいげつへの　アドバイス</div>
+      ${advice.map(a => `<div style="font-size:13px;color:var(--text-muted);margin-bottom:6px">・${a}</div>`).join('')}
+    </div>
+  `;
+}
+
+function buildAIConsultText() {
+  const { month, year } = state.personal;
+  const pE = getEntries('personal', year, month).filter(e=>e.type==='expense');
+  const bE = getEntries('business', year, month).filter(e=>e.type==='expense');
+  const pInc = getEntries('personal', year, month).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const bInc = getEntries('business', year, month).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const pExp = pE.reduce((s,e)=>s+e.amount,0);
+  const bExp = bE.reduce((s,e)=>s+e.amount,0);
+  const pCats = {}, bCats = {};
+  pE.forEach(e => pCats[e.cat] = (pCats[e.cat]||0)+e.amount);
+  bE.forEach(e => bCats[e.cat] = (bCats[e.cat]||0)+e.amount);
+
+  const catLines = (cats) => Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v]) => `  ・${k}: ¥${v.toLocaleString()}`).join('\n') || '  （記録なし）';
+
+  // 未払い一覧
+  const unpaidItems = getUnpaidItems();
+  const unpaidLines = unpaidItems.length
+    ? unpaidItems.map(u => `  ・${u.month} ${u.name}（${u.linkName || u.cat}）: ¥${u.amount.toLocaleString()}`).join('\n')
+    : '  （未払いなし）';
+  const unpaidTotal = unpaidItems.reduce((s,u)=>s+u.amount,0);
+
+  return `${year}年${month+1}月の家計・収支データです。使いすぎているものがあれば具体的に指摘して、来月に向けたアドバイスをください。
+
+【収入】
+家計収入: ¥${pInc.toLocaleString()}
+事業売上: ¥${bInc.toLocaleString()}
+
+【家計の支出（カテゴリ別）】
+${catLines(pCats)}
+家計支出合計: ¥${pExp.toLocaleString()}
+
+【事業の経費（カテゴリ別）】
+${catLines(bCats)}
+事業経費合計: ¥${bExp.toLocaleString()}
+
+【純収支】
+¥${(pInc+bInc-pExp-bExp).toLocaleString()}
+
+【未払い一覧（クレカ・ローン・公共料金など、まだ払っていないもの）】
+${unpaidLines}
+未払い合計: ¥${unpaidTotal.toLocaleString()}`;
+}
+
+function copyForAI() {
+  const text = buildAIConsultText();
+  navigator.clipboard.writeText(text).then(() => {
+    alert('コピーしました！ClaudeやChatGPTに貼り付けて相談してみてください。');
+  }).catch(() => {
+    alert('コピーに失敗しました。ブラウザの権限設定をご確認ください。');
+  });
+}
+
+// ---- 共有リンク（URLだけで内容が見られる） ----
+function copyShareLink() {
+  const text = buildAIConsultText();
+  const encoded = LZString.compressToEncodedURIComponent(text);
+  const url = `${location.origin}${location.pathname}?share=${encoded}`;
+  navigator.clipboard.writeText(url).then(() => {
+    alert('共有リンクをコピーしました！\nこのURLを開くと、ChatGPTなど誰でも今月のデータを見られます（ログイン不要）。\n※合言葉や個人情報は含まれていないので、送る相手は選んでください。');
+  }).catch(() => {
+    prompt('コピーに失敗しました。以下のURLを手動でコピーしてください：', url);
+  });
+}
+
+
+
+// freee勘定科目マッピング
+const FREEE_ACCOUNT_MAP = {
+  income: {
+    'セールス': '売上高', '人材': '売上高', '不動産': '売上高', 'イベント': '売上高',
+    'キッチンカー': '売上高', '開発・エンジニア': '売上高', 'デザイン': '売上高',
+    'ライティング': '売上高', 'コンサル': '売上高', '撮影・動画': '売上高', 'その他売上': '売上高'
+  },
+  expense: {
+    '家賃・地代': '地代家賃', '水道光熱費': '水道光熱費', '通信費': '通信費', 'ソフトウェア・SaaS': '消耗品費', '交通費': '旅費交通費',
+    '機材・備品': '消耗品費', '外注費': '外注費', '交際費': '交際費', '会議費': '会議費',
+    '書籍・学習': '研修採用費', '健康投資': '福利厚生費', '広告宣伝': '広告宣伝費', 'その他経費': '雑費'
+  }
+};
+
+function downloadFreeeCSV() {
+  const { month, year } = state.business;
+  const entries = getEntries('business', year, month);
+  if (!entries.length) { alert('この月の記録がありません'); return; }
+
+  const rows = [['発生日', '借方勘定科目', '借方税区分', '貸方勘定科目', '貸方税区分', '金額', '摘要']];
+  entries.forEach(e => {
+    const date = e.date || `${year}-${String(month+1).padStart(2,'0')}-01`;
+    if (e.type === 'income') {
+      const account = FREEE_ACCOUNT_MAP.income[e.cat] || '売上高';
+      rows.push([date, '売掛金', '対象外', account, '課税売上10%', e.amount, e.name]);
+    } else {
+      const account = FREEE_ACCOUNT_MAP.expense[e.cat] || '雑費';
+      rows.push([date, account, '課税仕入10%', '未払金', '対象外', e.amount, e.name]);
+    }
+  });
+
+  const bom = '\uFEFF';
+  const csv = bom + rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `freee_${year}${String(month+1).padStart(2,'0')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function renderWeeklySummary() {
+  renderWeeklyForMode('personal', 'personal-weekly');
+  renderWeeklyForMode('business', 'business-weekly');
+  renderWeeklyOverview();
+}
+
+function buildWeekRows(entries, year, month) {
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const weeks = [];
+  let cur = new Date(firstDay);
+  const dow = (cur.getDay() + 6) % 7;
+  cur.setDate(cur.getDate() - dow);
+  while (cur <= lastDay) {
+    const wStart = new Date(cur);
+    const wEnd = new Date(cur);
+    wEnd.setDate(wEnd.getDate() + 6);
+    weeks.push({ start: new Date(wStart), end: new Date(wEnd) });
+    cur.setDate(cur.getDate() + 7);
+  }
+  const mm = d => `${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  return weeks.map((w, i) => {
+    const wEntries = entries.filter(e => {
+      if (!e.date) return false;
+      const d = new Date(e.date);
+      return d >= w.start && d <= w.end;
+    });
+    const inc = wEntries.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+    const exp = wEntries.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+    return { label: `第${i+1}週 (${mm(w.start)}〜${mm(w.end)})`, inc, exp, net: inc-exp, count: wEntries.length };
+  });
+}
+
+function weeklyTableHTML(rows) {
+  if (!rows.length || rows.every(r=>r.count===0)) {
+    return '<div style="text-align:center;color:var(--text-hint);font-size:13px;padding:16px">日付を入力すると週次サマリーが表示されます</div>';
+  }
+  return `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:7px 4px;font-weight:500;color:var(--text-muted);font-size:11px">週</th>
+          <th style="text-align:right;padding:7px 4px;font-weight:500;color:var(--text-muted);font-size:11px">収入/売上</th>
+          <th style="text-align:right;padding:7px 4px;font-weight:500;color:var(--text-muted);font-size:11px">支出/経費</th>
+          <th style="text-align:right;padding:7px 4px;font-weight:500;color:var(--text-muted);font-size:11px">収支</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:8px 4px;color:var(--text-secondary);font-size:12px">${r.label}</td>
+            <td style="text-align:right;padding:8px 4px;font-family:var(--mono);color:var(--green)">${r.inc>0?fmt(r.inc):'—'}</td>
+            <td style="text-align:right;padding:8px 4px;font-family:var(--mono);color:var(--red)">${r.exp>0?fmt(r.exp):'—'}</td>
+            <td style="text-align:right;padding:8px 4px;font-family:var(--mono);font-weight:500;color:${r.net>=0?'var(--green)':'var(--red)'}">${r.net>=0?'+':''}${fmt(r.net)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+}
+
+function renderWeeklyForMode(mode, elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const { month, year } = state[mode];
+  const entries = getEntries(mode, year, month);
+  const rows = buildWeekRows(entries, year, month);
+  el.innerHTML = weeklyTableHTML(rows);
+}
+
+function renderWeeklyOverview() {
+  const el = document.getElementById('overview-weekly');
+  if (!el) return;
+  const { month: pm, year: py } = state.personal;
+  const { month: bm, year: by } = state.business;
+  // 個人の月を基準に総合週次を表示
+  const pEntries = getEntries('personal', py, pm);
+  const bEntries = getEntries('business', by, bm);
+  const allEntries = [...pEntries, ...bEntries];
+  const rows = buildWeekRows(allEntries, py, pm);
+  el.innerHTML = weeklyTableHTML(rows);
+}
+
+// ---- 年間サマリー ----
+let annualYear = now.getFullYear();
+
+function changeYear(dir) {
+  annualYear += dir;
+  renderAnnual();
+}
+
+function renderAnnual() {
+  document.getElementById('annual-year-label').textContent = `${annualYear}年`;
+  const months = Array.from({length:12},(_,m)=>m);
+  const pIncs = months.map(m=>getEntries('personal',annualYear,m).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0));
+  const pExps = months.map(m=>getEntries('personal',annualYear,m).filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0));
+  const bIncs = months.map(m=>getEntries('business',annualYear,m).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0));
+  const bExps = months.map(m=>getEntries('business',annualYear,m).filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0));
+  const totalIncs = months.map(m=>pIncs[m]+bIncs[m]);
+  const totalExps = months.map(m=>pExps[m]+bExps[m]);
+  const nets = months.map(m=>totalIncs[m]-totalExps[m]);
+  const yearInc = totalIncs.reduce((s,v)=>s+v,0);
+  const yearExp = totalExps.reduce((s,v)=>s+v,0);
+  const yearNet = yearInc - yearExp;
+  const bestMonth = nets.indexOf(Math.max(...nets));
+
+  document.getElementById('annual-metrics').innerHTML = `
+    <div class="metric"><div class="metric-label">年間総収入</div><div class="metric-value pos">${fmt(yearInc)}</div></div>
+    <div class="metric"><div class="metric-label">年間総支出</div><div class="metric-value neg">${fmt(yearExp)}</div></div>
+    <div class="metric"><div class="metric-label">年間純収支</div><div class="metric-value ${yearNet>=0?'pos':'neg'}">${yearNet>=0?'+':''}${fmt(yearNet)}</div></div>
+  `;
+
+  renderLineBarChart('annual-chart', MONTHS, totalIncs, totalExps, nets);
+
+  document.getElementById('annual-table').innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="border-bottom:1px solid var(--border)">
+        <th style="text-align:left;padding:7px 4px;font-size:11px;color:var(--text-muted);font-weight:500">月</th>
+        <th style="text-align:right;padding:7px 4px;font-size:11px;color:var(--text-muted);font-weight:500">収入</th>
+        <th style="text-align:right;padding:7px 4px;font-size:11px;color:var(--text-muted);font-weight:500">支出</th>
+        <th style="text-align:right;padding:7px 4px;font-size:11px;color:var(--text-muted);font-weight:500">収支</th>
+      </tr></thead>
+      <tbody>
+        ${months.map(m=>`
+          <tr style="border-bottom:1px solid var(--border);${m===bestMonth&&totalIncs[m]>0?'background:var(--green-bg)':''}">
+            <td style="padding:8px 4px;font-size:12px">${MONTHS[m]}${m===bestMonth&&totalIncs[m]>0?' ★':''}</td>
+            <td style="text-align:right;padding:8px 4px;font-family:var(--mono);color:var(--green)">${totalIncs[m]>0?fmt(totalIncs[m]):'—'}</td>
+            <td style="text-align:right;padding:8px 4px;font-family:var(--mono);color:var(--red)">${totalExps[m]>0?fmt(totalExps[m]):'—'}</td>
+            <td style="text-align:right;padding:8px 4px;font-family:var(--mono);font-weight:500;color:${nets[m]>=0?'var(--green)':'var(--red)'}">${totalIncs[m]>0||totalExps[m]>0?(nets[m]>=0?'+':'')+fmt(nets[m]):'—'}</td>
+          </tr>`).join('')}
+        <tr style="border-top:2px solid var(--border-strong)">
+          <td style="padding:9px 4px;font-weight:700">合計</td>
+          <td style="text-align:right;padding:9px 4px;font-family:var(--mono);font-weight:700;color:var(--green)">${fmt(yearInc)}</td>
+          <td style="text-align:right;padding:9px 4px;font-family:var(--mono);font-weight:700;color:var(--red)">${fmt(yearExp)}</td>
+          <td style="text-align:right;padding:9px 4px;font-family:var(--mono);font-weight:700;color:${yearNet>=0?'var(--green)':'var(--red)'}">${yearNet>=0?'+':''}${fmt(yearNet)}</td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  renderTaxSummary(months);
+}
+
+function renderTaxSummary(months) {
+  const el = document.getElementById('tax-summary');
+  if (!el) return;
+  const catTotals = {};
+  months.forEach(m => {
+    getEntries('business', annualYear, m).filter(e => e.type === 'expense').forEach(e => {
+      catTotals[e.cat] = (catTotals[e.cat] || 0) + e.amount;
+    });
+  });
+  const sorted = Object.entries(catTotals).sort((a,b) => b[1] - a[1]);
+  const total = sorted.reduce((s,[,v]) => s + v, 0);
+
+  el.innerHTML = sorted.length ? `
+    <table class="summary-table">
+      ${sorted.map(([cat,amt]) => `<tr><td style="color:var(--text-muted)">${cat}</td><td>${fmt(amt)}</td></tr>`).join('')}
+      <tr class="total-row"><td>経費合計</td><td style="color:var(--gold)">${fmt(total)}</td></tr>
+    </table>
+  ` : '<div class="empty">この年の事業経費の記録がありません</div>';
+}
+
+function downloadTaxSummaryCSV() {
+  const months = Array.from({length:12},(_,m)=>m);
+  const catTotals = {};
+  months.forEach(m => {
+    getEntries('business', annualYear, m).filter(e => e.type === 'expense').forEach(e => {
+      catTotals[e.cat] = (catTotals[e.cat] || 0) + e.amount;
+    });
+  });
+  const sorted = Object.entries(catTotals).sort((a,b) => b[1] - a[1]);
+  const total = sorted.reduce((s,[,v]) => s + v, 0);
+
+  let csv = '\uFEFF勘定科目,金額\n';
+  sorted.forEach(([cat,amt]) => { csv += `${cat},${amt}\n`; });
+  csv += `合計,${total}\n`;
+
+  const blob = new Blob([csv], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `確定申告用経費集計_${annualYear}年.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ---- 予算管理 ----
+function loadBudget() {
+  try { return JSON.parse(localStorage.getItem('cf-budget-v1')) || {}; } catch(e) { return {}; }
+}
+function saveBudget() {
+  const b = loadBudget(); // 既存データ（カテゴリ別予算など）を保持したまま更新する
+  b.inc = parseFloat(document.getElementById('budget-inc').value)||0;
+  b.exp = parseFloat(document.getElementById('budget-exp').value)||0;
+  b.bizInc = parseFloat(document.getElementById('budget-biz-inc').value)||0;
+  b.bizExp = parseFloat(document.getElementById('budget-biz-exp').value)||0;
+  localStorage.setItem('cf-budget-v1', JSON.stringify(b));
+  renderBudget();
+}
+
+// ---- カテゴリ別予算 ----
+function setCategoryBudget() {
+  const catEl = document.getElementById('catbudget-cat');
+  const amountEl = document.getElementById('catbudget-amount');
+  const amount = parseFloat(amountEl.value);
+  if (isNaN(amount) || amount <= 0) {
+    amountEl.style.borderColor = 'var(--red)';
+    setTimeout(() => { amountEl.style.borderColor = ''; }, 1000);
+    return;
+  }
+  const b = loadBudget();
+  if (!b.catBudgets) b.catBudgets = {};
+  b.catBudgets[catEl.value] = amount;
+  localStorage.setItem('cf-budget-v1', JSON.stringify(b));
+  amountEl.value = '';
+  renderBudget();
+}
+
+function deleteCategoryBudget(cat) {
+  const b = loadBudget();
+  if (b.catBudgets) { delete b.catBudgets[cat]; }
+  localStorage.setItem('cf-budget-v1', JSON.stringify(b));
+  renderBudget();
+}
+
+function renderCategoryBudgets() {
+  const el = document.getElementById('catbudget-list');
+  if (!el) return;
+  const b = loadBudget();
+  const catBudgets = b.catBudgets || {};
+  const cats = Object.keys(catBudgets);
+  if (cats.length === 0) { el.innerHTML = '<div class="empty">設定されているカテゴリ予算はありません</div>'; return; }
+
+  const { month, year } = state.personal;
+  const pE = getEntries('personal', year, month).filter(e => e.type === 'expense');
+  const spentByCat = {};
+  pE.forEach(e => { spentByCat[e.cat] = (spentByCat[e.cat] || 0) + e.amount; });
+
+  el.innerHTML = cats.map(cat => {
+    const target = catBudgets[cat];
+    const current = spentByCat[cat] || 0;
+    return `
+      <div style="position:relative;margin-bottom:14px">
+        ${progressHTML(cat, current, target, true)}
+        <button class="del-btn" style="position:absolute;top:-2px;right:-4px" onclick="deleteCategoryBudget('${cat}')" title="削除">×</button>
+      </div>`;
+  }).join('');
+}
+
+// ---- 貯蓄目標 ----
+function loadGoals() {
+  try { return JSON.parse(localStorage.getItem('cf-goals-v1')) || []; } catch(e) { return []; }
+}
+function saveGoals(list) { localStorage.setItem('cf-goals-v1', JSON.stringify(list)); }
+
+function addGoal() {
+  const nameEl = document.getElementById('goal-name');
+  const targetEl = document.getElementById('goal-target');
+  const deadlineEl = document.getElementById('goal-deadline');
+  const name = nameEl.value.trim();
+  const target = parseFloat(targetEl.value);
+  if (!name || isNaN(target) || target <= 0) {
+    nameEl.style.borderColor = (!name ? 'var(--red)' : '');
+    targetEl.style.borderColor = (isNaN(target)||target<=0 ? 'var(--red)' : '');
+    setTimeout(() => { nameEl.style.borderColor=''; targetEl.style.borderColor=''; }, 1000);
+    return;
+  }
+  const list = loadGoals();
+  list.push({ id: Date.now(), name, target, current: 0, deadline: deadlineEl.value || '' });
+  saveGoals(list);
+  nameEl.value = ''; targetEl.value = ''; deadlineEl.value = '';
+  renderGoals();
+}
+
+function addGoalProgress(id) {
+  const amountStr = prompt('積み立てる金額を入力してください（円）');
+  if (!amountStr) return;
+  const amount = parseFloat(amountStr);
+  if (isNaN(amount)) return;
+  const list = loadGoals();
+  const goal = list.find(g => g.id === id);
+  if (goal) { goal.current = Math.max(0, goal.current + amount); saveGoals(list); renderGoals(); }
+}
+
+function deleteGoal(id) {
+  saveGoals(loadGoals().filter(g => g.id !== id));
+  renderGoals();
+}
+
+function renderGoals() {
+  const el = document.getElementById('goal-list');
+  if (!el) return;
+  const list = loadGoals();
+  if (list.length === 0) { el.innerHTML = '<div class="empty">貯蓄目標はまだ登録されていません</div>'; return; }
+
+  const now = new Date();
+  el.innerHTML = list.map(g => {
+    const pct = Math.min(Math.round(g.current / g.target * 100), 100);
+    const remaining = Math.max(g.target - g.current, 0);
+    let deadlineText = '';
+    if (g.deadline) {
+      const [dy, dm] = g.deadline.split('-').map(Number);
+      const monthsLeft = (dy - now.getFullYear()) * 12 + (dm - 1 - now.getMonth());
+      if (monthsLeft > 0 && remaining > 0) {
+        const perMonth = Math.ceil(remaining / monthsLeft);
+        deadlineText = `<div style="font-size:11px;color:var(--text-hint);margin-top:4px">期限：${dy}年${dm}月（あと${monthsLeft}ヶ月・月${fmt(perMonth)}ペース必要）</div>`;
+      } else if (remaining <= 0) {
+        deadlineText = `<div style="font-size:11px;color:var(--green);margin-top:4px">🎉 目標達成済み！</div>`;
+      } else {
+        deadlineText = `<div style="font-size:11px;color:var(--red);margin-top:4px">⚠ 期限を過ぎています</div>`;
+      }
+    }
+
+    const scenarios = g.scenarios || [];
+    const scenarioHTML = g.isMain ? `
+      <div style="margin-top:12px;border-top:2px solid var(--border);padding-top:10px">
+        <div style="font-size:11px;color:var(--mp);margin-bottom:6px">月々の基本ペース（円）</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <input type="number" value="${g.baseMonthlyPace||0}" placeholder="0" style="flex:1" onchange="setGoalBasePace(${g.id}, this.value)">
+        </div>
+        <div style="font-size:11px;color:var(--mp);margin-bottom:6px">シナリオ（ON/OFFで到達予測に反映）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+          ${scenarios.map(s => `
+            <label class="gauge-scenario-toggle ${s.on?'on':''}">
+              <input type="checkbox" ${s.on?'checked':''} onchange="toggleScenario(${g.id},${s.id})">
+              ${s.name}（${s.amount>=0?'+':''}${fmt(s.amount)}/月）
+              <span onclick="event.preventDefault();deleteScenario(${g.id},${s.id})" style="cursor:pointer;color:var(--red);margin-left:4px">×</span>
+            </label>`).join('')}
+        </div>
+        <div style="display:flex;gap:6px">
+          <input id="scenario-name-${g.id}" placeholder="シナリオ名" style="flex:1.2">
+          <input id="scenario-amount-${g.id}" type="number" placeholder="+50000" style="flex:1">
+          <button class="add-btn green" style="width:36px;height:36px" onclick="addScenario(${g.id})">+</button>
+        </div>
+      </div>` : `
+      <button class="csv-btn" style="margin-top:10px;font-size:11px;padding:6px 10px" onclick="setMainGoal(${g.id})">⭐ このゲージをトップに表示する</button>
+    `;
+
+    return `
+      <div class="card" style="margin-bottom:10px;padding:14px 16px;${g.isMain?'border-color:var(--gold)':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:13px;color:var(--text)">${g.isMain?'⭐ ':''}${g.name}</span>
+          <button class="del-btn" onclick="deleteGoal(${g.id})" title="削除">×</button>
+        </div>
+        <div class="progress-label">
+          <span style="font-family:var(--mono);font-size:12px;color:${pct>=100?'var(--green)':'var(--gold)'}">${fmt(g.current)} / ${fmt(g.target)}（${pct}%）</span>
+        </div>
+        <div class="progress-bar-bg"><div class="progress-bar ${pct>=100?'ok':'warn'}" style="width:${pct}%"></div></div>
+        ${deadlineText}
+        <button class="csv-btn" style="margin-top:10px;font-size:11px;padding:6px 10px" onclick="addGoalProgress(${g.id})">＋ 積み立てを記録</button>
+        ${scenarioHTML}
+      </div>`;
+  }).join('');
+
+  renderMainGoalGauge();
+}
+
+function setMainGoal(id) {
+  const list = loadGoals();
+  list.forEach(g => { g.isMain = (g.id === id); });
+  saveGoals(list);
+  renderGoals();
+}
+
+function setGoalBasePace(id, value) {
+  const list = loadGoals();
+  const g = list.find(x => x.id === id);
+  if (g) { g.baseMonthlyPace = parseFloat(value) || 0; saveGoals(list); }
+  renderMainGoalGauge();
+}
+
+function addScenario(goalId) {
+  const nameEl = document.getElementById(`scenario-name-${goalId}`);
+  const amountEl = document.getElementById(`scenario-amount-${goalId}`);
+  const name = nameEl.value.trim();
+  const amount = parseFloat(amountEl.value);
+  if (!name || isNaN(amount)) return;
+  const list = loadGoals();
+  const g = list.find(x => x.id === goalId);
+  if (g) {
+    if (!g.scenarios) g.scenarios = [];
+    g.scenarios.push({ id: Date.now(), name, amount, on: false });
+    saveGoals(list);
+  }
+  renderGoals();
+}
+
+function toggleScenario(goalId, scenarioId) {
+  const list = loadGoals();
+  const g = list.find(x => x.id === goalId);
+  if (g && g.scenarios) {
+    const s = g.scenarios.find(sc => sc.id === scenarioId);
+    if (s) s.on = !s.on;
+    saveGoals(list);
+  }
+  renderGoals();
+}
+
+function deleteScenario(goalId, scenarioId) {
+  const list = loadGoals();
+  const g = list.find(x => x.id === goalId);
+  if (g && g.scenarios) {
+    g.scenarios = g.scenarios.filter(sc => sc.id !== scenarioId);
+    saveGoals(list);
+  }
+  renderGoals();
+}
+
+// ---- メイン目標ゲージ（ドット絵風・画面上部に常時表示） ----
+function renderMainGoalGauge() {
+  const el = document.getElementById('main-goal-gauge');
+  if (!el) return;
+  const list = loadGoals();
+  const g = list.find(x => x.isMain);
+  if (!g) { el.innerHTML = ''; return; }
+
+  const pct = Math.min(g.current / g.target, 1);
+  const barLen = 20;
+  const filled = Math.round(pct * barLen);
+  const bar = '█'.repeat(filled) + '░'.repeat(barLen - filled);
+  const remaining = Math.max(g.target - g.current, 0);
+
+  const scenarios = g.scenarios || [];
+  const activeBonus = scenarios.filter(s => s.on).reduce((s,sc) => s + sc.amount, 0);
+  const totalPace = (g.baseMonthlyPace || 0) + activeBonus;
+
+  let projectionHTML = '';
+  if (totalPace > 0 && remaining > 0) {
+    const monthsNeeded = Math.ceil(remaining / totalPace);
+    const projDate = new Date(); projDate.setMonth(projDate.getMonth() + monthsNeeded);
+    let deadlineCompare = '';
+    if (g.deadline) {
+      const [dy, dm] = g.deadline.split('-').map(Number);
+      const deadlineDate = new Date(dy, dm - 1, 1);
+      const onTime = projDate <= deadlineDate;
+      deadlineCompare = `<span style="color:${onTime?'var(--green)':'var(--red)'}">${onTime?'✓ 期限内に到達見込み':'⚠ 期限に間に合わない見込み'}</span>`;
+    }
+    projectionHTML = `
+      <div class="main-gauge-projection">
+        <span>月${fmt(totalPace)}ペースなら → <strong style="color:var(--gold)">${projDate.getFullYear()}年${projDate.getMonth()+1}月ごろ到達</strong></span>
+        ${deadlineCompare}
+      </div>`;
+  } else if (remaining <= 0) {
+    projectionHTML = `<div class="main-gauge-projection"><span style="color:var(--green)">🎉 目標達成済みです！</span></div>`;
+  }
+
+  el.innerHTML = `
+    <div class="main-gauge-banner">
+      <div class="main-gauge-title">━━━━━━━━━━━━━━<br>${g.name}</div>
+      <div class="main-gauge-ascii">${bar}</div>
+      <div class="main-gauge-numbers">${fmt(g.current)} / ${fmt(g.target)}</div>
+      <div class="main-gauge-remaining">あと${fmt(remaining)}　━━━━━━━━━━━━━━</div>
+      ${projectionHTML}
+    </div>
+  `;
+}
+
+function progressHTML(label, current, target, isExpense=false) {
+  if (!target) return '';
+  const pct = Math.min(Math.round(current/target*100), 100);
+  const over = current > target;
+  const warn = !over && pct >= 80;
+  const cls = over ? 'over' : warn ? 'warn' : 'ok';
+  const statusColor = over ? 'var(--red)' : warn ? '#7A5C00' : 'var(--green)';
+  return `
+    <div class="progress-wrap">
+      <div class="progress-label">
+        <span style="font-size:12px;color:var(--text-muted)">${label}</span>
+        <span style="font-family:var(--mono);font-size:12px;color:${statusColor}">${fmt(current)} / ${fmt(target)} (${pct}%${over?(isExpense?' 超過':' 達成済'):''})</span>
+      </div>
+      <div class="progress-bar-bg"><div class="progress-bar ${cls}" style="width:${pct}%"></div></div>
+    </div>`;
+}
+
+function renderBudget() {
+  const b = loadBudget();
+  document.getElementById('budget-inc').value = b.inc||'';
+  document.getElementById('budget-exp').value = b.exp||'';
+  document.getElementById('budget-biz-inc').value = b.bizInc||'';
+  document.getElementById('budget-biz-exp').value = b.bizExp||'';
+  renderAllocations();
+
+  const pm = state.personal.month, py = state.personal.year;
+  const bm = state.business.month, by = state.business.year;
+  const pE = getEntries('personal',py,pm);
+  const bE = getEntries('business',by,bm);
+  const pInc = pE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const pExp = pE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+  const bInc = bE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const bExp = bE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+
+  const el = document.getElementById('budget-progress');
+  renderCategoryBudgets();
+  renderGoals();
+  if (!b.inc && !b.exp && !b.bizInc && !b.bizExp) {
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-title">今月の達成率 — 個人・家計</div>
+      ${progressHTML('収入目標', pInc, b.inc)}
+      ${progressHTML('支出上限', pExp, b.exp, true)}
+    </div>
+    <div class="card">
+      <div class="card-title">今月の達成率 — フリーランス</div>
+      ${progressHTML('売上目標', bInc, b.bizInc)}
+      ${progressHTML('経費上限', bExp, b.bizExp, true)}
+    </div>`;
+}
+
+// ---- 家事按分 ----
+function loadAllocations() {
+  try { return JSON.parse(localStorage.getItem('cf-allocation-v1')) || {}; } catch(e) { return {}; }
+}
+function saveAllocations(map) { localStorage.setItem('cf-allocation-v1', JSON.stringify(map)); }
+
+function setAllocation() {
+  const catEl = document.getElementById('alloc-cat');
+  const rateEl = document.getElementById('alloc-rate');
+  const rate = parseFloat(rateEl.value);
+  if (isNaN(rate) || rate <= 0 || rate > 100) {
+    rateEl.style.borderColor = 'var(--red)';
+    setTimeout(() => { rateEl.style.borderColor = ''; }, 1000);
+    return;
+  }
+  const map = loadAllocations();
+  map[catEl.value] = rate;
+  saveAllocations(map);
+  rateEl.value = '';
+  renderAllocations();
+  updateAllocHint();
+}
+
+function deleteAllocation(cat) {
+  const map = loadAllocations();
+  delete map[cat];
+  saveAllocations(map);
+  renderAllocations();
+  updateAllocHint();
+}
+
+function renderAllocations() {
+  const el = document.getElementById('alloc-list');
+  if (!el) return;
+  const map = loadAllocations();
+  const cats = Object.keys(map);
+  el.innerHTML = cats.length ? cats.map(cat => `
+    <div class="entry">
+      <span class="entry-name">${cat}</span>
+      <span style="font-family:var(--mono);font-size:13px;color:var(--mp)">${map[cat]}%が事業経費</span>
+      <button class="del-btn" onclick="deleteAllocation('${cat}')" title="削除">×</button>
+    </div>`).join('') : '<div class="empty">按分設定はまだありません</div>';
+}
+
+// 家計の支出フォームで、按分設定されたカテゴリを選ぶとヒントを表示
+function updateAllocHint() {
+  const catEl = document.getElementById('p-exp-cat');
+  const amountEl = document.getElementById('p-exp-amount');
+  const hintEl = document.getElementById('alloc-hint');
+  const textEl = document.getElementById('alloc-hint-text');
+  if (!catEl || !hintEl) return;
+
+  const map = loadAllocations();
+  const rate = map[catEl.value];
+  const amount = parseFloat(amountEl.value) || 0;
+
+  if (!rate) { hintEl.style.display = 'none'; return; }
+
+  const allocAmount = Math.round(amount * rate / 100);
+  hintEl.style.display = 'block';
+  textEl.textContent = `この${rate}%（${fmt(allocAmount)}）を事業経費（家賃・地代など）にも自動で計上する`;
+}
+
+// ---- 過去の支出・収入を検索 ----
+function openSearchModal() {
+  document.getElementById('search-keyword').value = '';
+  document.getElementById('search-results').innerHTML = '<div class="empty">キーワードを入力してください</div>';
+  document.getElementById('search-modal').classList.add('open');
+  setTimeout(() => document.getElementById('search-keyword').focus(), 100);
+}
+function closeSearchModal() {
+  document.getElementById('search-modal').classList.remove('open');
+}
+
+function runSearch() {
+  const keyword = document.getElementById('search-keyword').value.trim().toLowerCase();
+  const modeFilter = document.getElementById('search-mode').value;
+  const resultsEl = document.getElementById('search-results');
+  if (!keyword) { resultsEl.innerHTML = '<div class="empty">キーワードを入力してください</div>'; return; }
+
+  const modes = modeFilter === 'all' ? ['personal','business'] : [modeFilter];
+  const results = [];
+  modes.forEach(mode => {
+    Object.values(state[mode].entries || {}).forEach(arr => {
+      arr.forEach(e => {
+        if (e.name.toLowerCase().includes(keyword) || (e.cat && e.cat.toLowerCase().includes(keyword))) {
+          results.push({ ...e, mode });
+        }
+      });
+    });
+  });
+  results.sort((a,b) => (b.date||'').localeCompare(a.date||''));
+
+  if (results.length === 0) {
+    resultsEl.innerHTML = '<div class="empty">見つかりませんでした</div>';
+    return;
+  }
+
+  const total = results.reduce((s,r) => s + (r.type === 'income' ? r.amount : -r.amount), 0);
+  resultsEl.innerHTML = `
+    <div style="font-size:11px;color:var(--text-hint);margin-bottom:8px">${results.length}件ヒット・合計 ${total>=0?'+':''}${fmt(total)}</div>
+    ${results.map(r => `
+      <div class="entry">
+        ${r.date ? `<span style="font-size:11px;color:var(--text-hint);font-family:var(--mono);white-space:nowrap">${r.date}</span>` : ''}
+        <span class="entry-cat ${r.type==='income'?'cat-inc':'cat-exp'}">${r.mode==='business'?'💼':'🏠'}${r.cat}</span>
+        <span class="entry-name">${r.name}</span>
+        <span class="entry-amount ${r.type==='income'?'inc':'exp'}">${r.type==='income'?'+':'-'}${fmt(r.amount)}</span>
+      </div>`).join('')}
+  `;
+}
+
+// ---- 売掛金管理 ----
+function renderReceivables() {
+  const el = document.getElementById('receivables-list');
+  const totalEl = document.getElementById('receivables-total');
+  if (!el) return;
+
+  const items = [];
+  Object.values(state.business.entries || {}).forEach(arr => {
+    arr.forEach(e => {
+      if (e.type === 'income' && e.status && e.status !== '入金済') {
+        items.push(e);
+      }
+    });
+  });
+  items.sort((a,b) => (a.dueDate||'9999-99').localeCompare(b.dueDate||'9999-99'));
+
+  const today = getTodayKey();
+  el.innerHTML = items.length ? items.map(e => {
+    const daysUntil = e.dueDate ? Math.ceil((new Date(e.dueDate) - new Date(today)) / 86400000) : null;
+    const overdue = daysUntil !== null && daysUntil < 0;
+    const urgent = daysUntil !== null && daysUntil >= 0 && daysUntil <= 7;
+    return `
+    <div class="entry" style="${overdue?'border-color:var(--red);background:#1a0000':urgent?'border-color:var(--gold);background:#1a1500':''}">
+      <span class="entry-cat ${e.status==='請求済'?'status-billed':'cat-exp'}" style="border:1px solid;padding:2px 8px;font-size:10px">${e.status}</span>
+      <span class="entry-name">${e.name}${e.dueDate ? `<span class="acc-badge" style="border-color:${overdue?'var(--red)':'var(--mp)'};color:${overdue?'var(--red)':'var(--mp)'}">${e.dueDate}${overdue?' 期限超過':urgent?` あと${daysUntil}日`:''}</span>` : ''}</span>
+      <span class="entry-amount inc">${fmt(e.amount)}</span>
+    </div>`;
+  }).join('') : '<div class="empty">未入金の売掛金はありません</div>';
+
+  const total = items.reduce((s,e) => s + e.amount, 0);
+  totalEl.textContent = items.length ? `売掛金合計 ${fmt(total)}` : '';
+}
+
+// ---- 収入依存度・リスク診断 ----
+function renderDependencyChart() {
+  const el = document.getElementById('dependency-chart');
+  if (!el) return;
+  const { month, year } = state.business;
+  const months = getMonthRange(year, month, 3);
+  const totals = {};
+  let grandTotal = 0;
+  months.forEach(({year:y, month:m}) => {
+    getEntries('business', y, m).filter(e => e.type === 'income').forEach(e => {
+      totals[e.name] = (totals[e.name] || 0) + e.amount;
+      grandTotal += e.amount;
+    });
+  });
+
+  if (grandTotal === 0) { el.innerHTML = '<div class="empty">直近3ヶ月の売上記録がありません</div>'; return; }
+
+  const sorted = Object.entries(totals).sort((a,b) => b[1] - a[1]);
+  const topShare = sorted.length ? Math.round(sorted[0][1] / grandTotal * 100) : 0;
+
+  let warning = '';
+  if (topShare >= 70) {
+    warning = `<div style="margin-top:10px;padding:10px 12px;background:#330000;border:2px solid var(--red);font-size:12px;color:var(--red)">💀 「${sorted[0][0]}」への依存度が${topShare}%と非常に高い状態です。この取引先が失われた場合の影響が大きいので、新規開拓を検討しましょう。</div>`;
+  } else if (topShare >= 50) {
+    warning = `<div style="margin-top:10px;padding:10px 12px;background:#2a2000;border:2px solid var(--gold);font-size:12px;color:var(--gold)">⚠ 「${sorted[0][0]}」への依存度が${topShare}%です。半分以上を1社に頼っている状態なので、少しずつ分散できると安心です。</div>`;
+  } else {
+    warning = `<div style="margin-top:10px;padding:10px 12px;background:#001a0d;border:2px solid var(--green);font-size:12px;color:var(--green)">✓ 特定のクライアントへの偏りは大きくありません。バランスの良い状態です。</div>`;
+  }
+
+  el.innerHTML = `
+    <table class="summary-table">
+      ${sorted.map(([name, amt]) => `
+        <tr><td style="color:var(--text-muted)">${name}</td><td>${Math.round(amt/grandTotal*100)}%（${fmt(amt)}）</td></tr>
+      `).join('')}
+    </table>
+    ${warning}
+  `;
+}
+
+// ---- 買っていい？チェック ----
+function openPurchaseCheckModal() {
+  document.getElementById('purchase-check-result').innerHTML = '';
+  document.getElementById('check-amount').value = '';
+  document.getElementById('purchase-check-modal').classList.add('open');
+}
+function closePurchaseCheckModal() {
+  document.getElementById('purchase-check-modal').classList.remove('open');
+}
+
+function runPurchaseCheck() {
+  const amountEl = document.getElementById('check-amount');
+  const catEl = document.getElementById('check-cat');
+  const amount = parseFloat(amountEl.value);
+  const resultEl = document.getElementById('purchase-check-result');
+  if (isNaN(amount) || amount <= 0) {
+    amountEl.style.borderColor = 'var(--red)';
+    setTimeout(() => { amountEl.style.borderColor = ''; }, 1000);
+    return;
+  }
+  const cat = catEl.value;
+
+  const budget = loadBudget();
+  const { month, year } = state.personal;
+  const pE = getEntries('personal', year, month);
+  const pInc = pE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const pExp = pE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+  const catSpent = pE.filter(e=>e.type==='expense' && e.cat===cat).reduce((s,e)=>s+e.amount,0);
+
+  // 過去6ヶ月（今月を除く）の同カテゴリの平均支出を算出
+  const pastMonths = getMonthRange(year, month, 7).slice(0, 6); // 直近6ヶ月（今月除く）
+  const pastCatTotals = pastMonths.map(({year:y,month:m}) =>
+    getEntries('personal', y, m).filter(e=>e.type==='expense' && e.cat===cat).reduce((s,e)=>s+e.amount,0)
+  );
+  const monthsWithData = pastCatTotals.filter(v => v > 0).length;
+  const avgCatSpend = monthsWithData > 0 ? pastCatTotals.reduce((s,v)=>s+v,0) / pastMonths.length : null;
+
+  // 月末予測残高を簡易計算（残高タブと同じロジック）
+  const b = loadBalance();
+  const totalAcc = (b.accounts||[]).reduce((s,a)=>s+a.balance,0);
+  const bE = getEntries('business', state.business.year, state.business.month);
+  const bInc = bE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const bExp = bE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+  const loanTotal = (b.loans||[]).reduce((s,l)=>s+l.monthly,0);
+  const endBalance = totalAcc + (pInc+bInc) - (pExp+bExp) - loanTotal;
+  const endBalanceAfter = endBalance - amount;
+
+  const reasons = [];
+  let riskScore = 0; // 高いほど「がまん」寄り
+
+  // 予算上限チェック
+  if (budget.exp) {
+    const remaining = budget.exp - pExp;
+    if (amount > remaining) {
+      reasons.push(`⚠ 今月の支出上限まであと${fmt(Math.max(remaining,0))}。これを買うと<span style="color:var(--red)">上限を${fmt(amount-remaining)}オーバー</span>します。`);
+      riskScore += 2;
+    } else if (amount > remaining * 0.5) {
+      reasons.push(`支出上限の残り${fmt(remaining)}に対して、それなりの割合（${Math.round(amount/remaining*100)}%）を使うことになります。`);
+      riskScore += 1;
+    } else {
+      reasons.push(`支出上限にはまだ${fmt(remaining)}の余裕があります。`);
+    }
+  }
+
+  // 過去の支出傾向との比較
+  if (avgCatSpend !== null) {
+    const afterCatSpend = catSpent + amount;
+    const vsAvgPct = Math.round((afterCatSpend / avgCatSpend) * 100);
+    if (vsAvgPct >= 130) {
+      reasons.push(`「${cat}」は過去6ヶ月の月平均が${fmt(Math.round(avgCatSpend))}ですが、これを買うと今月は${fmt(afterCatSpend)}（平均の${vsAvgPct}%）になります。いつもより多めのペースです。`);
+      riskScore += 1;
+    } else if (vsAvgPct <= 70) {
+      reasons.push(`「${cat}」は過去6ヶ月の月平均${fmt(Math.round(avgCatSpend))}に対して、今月はまだ${fmt(afterCatSpend)}。いつもより控えめなペースです。`);
+    } else {
+      reasons.push(`「${cat}」への支出は、過去6ヶ月の平均（${fmt(Math.round(avgCatSpend))}）とだいたい同じペースです。`);
+    }
+  } else {
+    reasons.push(`「${cat}」の過去の記録がまだ少ないので、傾向との比較はできませんでした。`);
+  }
+
+  // カテゴリの使いすぎチェック（今月内の構成比）
+  if (pExp > 0) {
+    const catPct = Math.round(catSpent / pExp * 100);
+    if (SPENDY_CATS.includes(cat) && catPct >= 25) {
+      reasons.push(`「${cat}」は今月すでに${fmt(catSpent)}（家計支出の${catPct}%）使っています。ちょこちょこ買いが積み重なっているかも。`);
+      riskScore += 1;
+    }
+  }
+
+  // 月末予測残高チェック
+  if (endBalanceAfter < 0) {
+    reasons.push(`これを買うと<span style="color:var(--red)">月末の予測残高がマイナス</span>（${fmt(endBalanceAfter)}）になりそうです。`);
+    riskScore += 2;
+  } else if (endBalance > 0 && endBalanceAfter < endBalance * 0.1) {
+    reasons.push(`月末予測残高がかなりギリギリ（${fmt(endBalanceAfter)}）になります。`);
+    riskScore += 1;
+  } else {
+    reasons.push(`月末の予測残高への影響は小さそうです（購入後: ${fmt(endBalanceAfter)}）。`);
+  }
+
+  // レベル・ごほうびとの兼ね合い（あと少しでレベルアップならがまんを後押し）
+  const lvl = loadLevel();
+  const curLv = levelFromXP(lvl.xp);
+  const nextRewardLv = REWARD_LEVELS.find(rl => rl > curLv);
+  if (nextRewardLv) {
+    const remain = xpForLevel(nextRewardLv) - lvl.xp;
+    if (remain > 0 && remain <= 30) {
+      reasons.push(`もうすぐLv.${nextRewardLv}で「${REWARDS[nextRewardLv].name}」が解禁されます。ここでがまんできれば、もっと良いご褒美が待っているかも！`);
+    }
+  }
+
+  let verdict, title;
+  if (riskScore >= 3) { verdict = 'stop'; title = '🔴 がまんしよう'; }
+  else if (riskScore >= 1) { verdict = 'caution'; title = '🟡 ちょっと注意'; }
+  else { verdict = 'go'; title = '🟢 かっても大丈夫！'; }
+
+  resultEl.innerHTML = `
+    <div class="purchase-verdict ${verdict}">
+      <div class="purchase-verdict-title">${title}</div>
+      <div class="purchase-verdict-reasons">${reasons.map(r => `<div>・${r}</div>`).join('')}</div>
+    </div>
+  `;
+}
+
+
+// ---- 残高・負債 ----
+function updateAccountSelects() {
+  const b = loadBalance();
+  const accOpts = b.accounts.length
+    ? b.accounts.map(a => `<option value="acc-${a.id}">🏦 ${a.name}（${fmt(a.balance)}）</option>`).join('')
+    : '';
+  const cardOpts = (b.cards || []).length
+    ? b.cards.map(c => `<option value="card-${c.id}">💳 ${c.name}</option>`).join('')
+    : '';
+
+  // 収入の入金先：口座のみ（選択中の値を保持する）
+  const incOpts = b.accounts.length
+    ? b.accounts.map(a => `<option value="acc-${a.id}">${a.name}（${fmt(a.balance)}）</option>`).join('')
+    : '<option value="" disabled>口座を登録してください</option>';
+  ['p-inc-account','b-inc-account'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      const v = el.value;
+      el.innerHTML = incOpts;
+      if ([...el.options].some(o => o.value === v)) el.value = v;
+    }
+  });
+
+  // 支出の支払い方法：口座直接 or クレカ（選択中の値を保持する）
+  const expOpts = (accOpts || cardOpts)
+    ? `${accOpts ? `<optgroup label="🏦 口座直接">${accOpts}</optgroup>` : ''}${cardOpts ? `<optgroup label="💳 クレジットカード">${cardOpts}</optgroup>` : ''}`
+    : '<option value="" disabled>口座・カードを登録してください</option>';
+  ['p-exp-account','b-exp-account'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      const v = el.value;
+      el.innerHTML = expOpts;
+      if ([...el.options].some(o => o.value === v)) el.value = v;
+    }
+  });
+
+  // 未払い一覧の支払い元口座（値はプレーンな口座IDを使用、選択中の値を保持する）
+  const unpaidAccEl = document.getElementById('unpaid-account');
+  const plainOpts = b.accounts.map(a => `<option value="${a.id}">${a.name}（${fmt(a.balance)}）</option>`).join('');
+  if (unpaidAccEl) {
+    const v = unpaidAccEl.value;
+    unpaidAccEl.innerHTML = '<option value="">未指定（残高に反映しない）</option>' + plainOpts;
+    if ([...unpaidAccEl.options].some(o => o.value === v)) unpaidAccEl.value = v;
+  }
+
+  // ローン借入時の入金先口座（同じくプレーンな口座IDを使用）
+  const loanDepositEl = document.getElementById('loan-deposit-account');
+  if (loanDepositEl) {
+    const v = loanDepositEl.value;
+    loanDepositEl.innerHTML = '<option value="">未指定（残高に反映しない）</option>' + plainOpts;
+    if ([...loanDepositEl.options].some(o => o.value === v)) loanDepositEl.value = v;
+  }
+}
+
+// ---- 振替 ----
+function addTransfer() {
+  const fromId = parseInt(document.getElementById('transfer-from').value);
+  const toId = parseInt(document.getElementById('transfer-to').value);
+  const amount = parseFloat(document.getElementById('transfer-amount').value);
+  if (isNaN(fromId) || isNaN(toId) || isNaN(amount) || amount <= 0) return;
+  if (fromId === toId) { alert('出金元と入金先が同じです'); return; }
+
+  const b = loadBalance();
+  const fromAcc = b.accounts.find(a => a.id === fromId);
+  const toAcc = b.accounts.find(a => a.id === toId);
+  if (!fromAcc || !toAcc) return;
+
+  fromAcc.balance -= amount;
+  toAcc.balance += amount;
+
+  if (!b.transfers) b.transfers = [];
+  b.transfers.unshift({
+    id: Date.now(),
+    date: new Date().toISOString().slice(0, 10),
+    fromId, fromName: fromAcc.name,
+    toId, toName: toAcc.name,
+    amount
+  });
+
+  saveBalance(b);
+  document.getElementById('transfer-amount').value = '';
+  renderBalance();
+}
+
+function deleteTransfer(id) {
+  const b = loadBalance();
+  const t = (b.transfers || []).find(t => t.id === id);
+  if (!t) return;
+  // 振替を取り消す（残高を戻す）
+  const fromAcc = b.accounts.find(a => a.id === t.fromId);
+  const toAcc = b.accounts.find(a => a.id === t.toId);
+  if (fromAcc) fromAcc.balance += t.amount;
+  if (toAcc) toAcc.balance -= t.amount;
+  b.transfers = b.transfers.filter(x => x.id !== id);
+  saveBalance(b);
+  renderBalance();
+}
+
+function updateTransferSelects(accounts) {
+  const opts = accounts.length
+    ? accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('')
+    : '<option value="" disabled>口座を登録してください</option>';
+  ['transfer-from', 'transfer-to'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts;
+  });
+  // デフォルトでfromとtoが別になるよう2つ目を選択
+  const toEl = document.getElementById('transfer-to');
+  if (toEl && toEl.options.length > 1) toEl.selectedIndex = 1;
+}
+
+function loadBalance() {
+  try { return JSON.parse(localStorage.getItem('cf-balance-v1')) || { accounts:[], cards:[], loans:[] }; } catch(e) { return { accounts:[], cards:[], loans:[] }; }
+}
+function saveBalance(b) { localStorage.setItem('cf-balance-v1', JSON.stringify(b)); }
+
+function addAccount() {
+  const name = document.getElementById('acc-name').value.trim();
+  const balance = parseFloat(document.getElementById('acc-balance').value);
+  if (!name || isNaN(balance)) return;
+  const b = loadBalance();
+  b.accounts.push({ id: Date.now(), name, balance });
+  saveBalance(b);
+  document.getElementById('acc-name').value = '';
+  document.getElementById('acc-balance').value = '';
+  renderBalance();
+}
+
+function deleteAccount(id) {
+  const b = loadBalance();
+  b.accounts = b.accounts.filter(a => a.id !== id);
+  saveBalance(b);
+  renderBalance();
+}
+
+function addCreditCard() {
+  const name = document.getElementById('cc-name').value.trim();
+  const debt = parseFloat(document.getElementById('cc-debt').value) || 0;
+  const day = parseInt(document.getElementById('cc-day').value);
+  if (!name || isNaN(day)) return;
+  const b = loadBalance();
+  if (!b.cards) b.cards = [];
+  b.cards.push({ id: Date.now(), name, debt, day });
+  saveBalance(b);
+  ['cc-name','cc-debt','cc-day'].forEach(id => document.getElementById(id).value = '');
+  renderBalance();
+  updateAccountSelects();
+}
+
+function deleteCreditCard(id) {
+  const b = loadBalance();
+  b.cards = b.cards.filter(c => c.id !== id);
+  saveBalance(b);
+  renderBalance();
+  updateAccountSelects();
+}
+
+function addLoan() {
+  const name = document.getElementById('loan-name').value.trim();
+  const balance = parseFloat(document.getElementById('loan-balance').value);
+  const monthly = parseFloat(document.getElementById('loan-monthly').value);
+  const day = parseInt(document.getElementById('loan-day').value);
+  if (!name || isNaN(balance) || isNaN(monthly) || isNaN(day)) return;
+  const b = loadBalance();
+  b.loans.push({ id: Date.now(), name, balance, monthly, day });
+
+  // 入金先口座が指定されていれば、借りたお金をその口座残高に反映する
+  const depositEl = document.getElementById('loan-deposit-account');
+  if (depositEl && depositEl.value) {
+    const acc = b.accounts.find(a => a.id === parseInt(depositEl.value));
+    if (acc) acc.balance += balance;
+  }
+
+  saveBalance(b);
+  document.getElementById('loan-name').value = '';
+  document.getElementById('loan-balance').value = '';
+  document.getElementById('loan-monthly').value = '';
+  document.getElementById('loan-day').value = '';
+  if (depositEl) depositEl.value = '';
+  renderBalance();
+}
+
+function deleteLoan(id) {
+  const b = loadBalance();
+  b.loans = b.loans.filter(l => l.id !== id);
+  saveBalance(b);
+  renderBalance();
+}
+
+function renderBalance() {
+  const b = loadBalance();
+  const today = new Date();
+  updateAccountSelects();
+
+  // 口座一覧
+  const accEl = document.getElementById('account-list');
+  const totalAcc = b.accounts.reduce((s, a) => s + a.balance, 0);
+  accEl.innerHTML = b.accounts.length ? b.accounts.map(a => `
+    <div class="entry">
+      <span class="entry-name">${a.name}</span>
+      <span class="entry-amount inc" style="font-size:15px;font-weight:600">${fmt(a.balance)}</span>
+      <button class="del-btn" onclick="deleteAccount(${a.id})">×</button>
+    </div>`).join('') : '';
+  const totalEl = document.getElementById('account-total');
+  totalEl.textContent = b.accounts.length > 1 ? `合計 ${fmt(totalAcc)}` : '';
+
+  // 今月のエントリ（現在表示中の月を基準に集計）
+  const pm = state.personal.month, py = state.personal.year;
+  const bm = state.business.month, by = state.business.year;
+  const pE = getEntries('personal', py, pm);
+  const bE = getEntries('business', by, bm);
+  const allExpEntries = [...pE, ...bE].filter(e => e.type === 'expense');
+
+  // クレカ一覧
+  const ccEl = document.getElementById('creditcard-list');
+  ccEl.innerHTML = (b.cards||[]).length ? b.cards.map(c => {
+    const daysUntil = (() => {
+      const target = new Date(today.getFullYear(), today.getMonth(), c.day);
+      if (target < today) target.setMonth(target.getMonth() + 1);
+      return Math.ceil((target - today) / 86400000);
+    })();
+    const urgent = daysUntil <= 7;
+    const cardUsage = allExpEntries.filter(e => e.cardId === c.id).reduce((s,e) => s + e.amount, 0);
+    const cardUnpaid = getUnpaidItems().filter(u => u.cardId === c.id).reduce((s,u) => s + u.amount, 0);
+    return `
+    <div class="entry" style="flex-wrap:wrap;gap:6px;${urgent?'border-color:var(--gold);background:#1a1200':''}">
+      <span class="entry-name" style="flex:1;min-width:100px">💳 ${c.name}</span>
+      <span style="font-size:10px;padding:2px 7px;border:1px solid ${urgent?'var(--gold)':'var(--border)'};color:${urgent?'var(--gold)':'var(--text-muted)'};white-space:nowrap">
+        ${c.day}日引落${urgent?` ⚠ あと${daysUntil}日`:''}
+      </span>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+        <div style="font-size:11px;color:var(--text-muted)">今月利用: <span style="color:var(--red);font-family:var(--mono)">-${fmt(cardUsage)}</span></div>
+        ${cardUnpaid > 0 ? `<div style="font-size:11px;color:var(--gold)">未払い合計: <span style="font-family:var(--mono)">-${fmt(cardUnpaid)}</span></div>` : ''}
+        ${c.debt ? `<div style="font-size:11px;color:var(--text-muted)">分割残債: <span style="color:var(--mp);font-family:var(--mono)">${fmt(c.debt)}</span></div>` : ''}
+      </div>
+      <button class="del-btn" onclick="deleteCreditCard(${c.id})">×</button>
+    </div>`;
+  }).join('') : '';
+
+  // ローン一覧
+  const loanEl = document.getElementById('loan-list');
+  loanEl.innerHTML = b.loans.length ? b.loans.map(l => {
+    const monthsLeft = Math.ceil(l.balance / l.monthly);
+    const endDate = new Date(today.getFullYear(), today.getMonth() + monthsLeft, 1);
+    const endStr = `${endDate.getFullYear()}年${endDate.getMonth()+1}月完済見込`;
+    return `
+    <div class="entry">
+      <span class="entry-name">${l.name}</span>
+      <span style="font-size:11px;color:var(--text-hint);white-space:nowrap">${l.day}日返済 · ${endStr}</span>
+      <div style="text-align:right;white-space:nowrap">
+        <div class="entry-amount exp">残 ${fmt(l.balance)}</div>
+        <div style="font-size:11px;color:var(--text-muted);font-family:var(--mono)">月 -${fmt(l.monthly)}</div>
+      </div>
+      <button class="del-btn" onclick="deleteLoan(${l.id})">×</button>
+    </div>`;
+  }).join('') : '';
+
+  // 月末CF予測
+  const monthIncome = pE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0)
+                    + bE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
+  const monthExpense = pE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0)
+                     + bE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+  const ccTotal = allExpEntries.filter(e => e.cardId).reduce((s,e) => s + e.amount, 0);
+  const ccDebtTotal = (b.cards||[]).reduce((s,c) => s + (c.debt || 0), 0);
+  const loanTotal = b.loans.reduce((s,l) => s + l.monthly, 0);
+  const thisMonthKey = getTodayKey().slice(0,7);
+  const unpaidThisMonth = getUnpaidItems().filter(u => u.month === thisMonthKey).reduce((s,u) => s + u.amount, 0);
+  const endBalance = totalAcc + monthIncome - monthExpense - loanTotal;
+
+  const forecastEl = document.getElementById('cf-forecast');
+  forecastEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px">
+      <div>
+        <div style="font-size:10px;color:var(--text-hint);font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">現在の口座残高</div>
+        <div style="font-size:19px;font-weight:700;font-family:var(--mono)">${fmt(totalAcc)}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-hint);font-family:var(--mono);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px">月末予測残高</div>
+        <div style="font-size:26px;font-weight:700;font-family:var(--mono);letter-spacing:-1px;color:${endBalance>=0?'var(--green)':'var(--red)'}">${fmt(endBalance)}</div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);display:flex;flex-direction:column;gap:4px">
+      <div style="display:flex;justify-content:space-between"><span>今月収入</span><span style="font-family:var(--mono);color:var(--green)">+${fmt(monthIncome)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>今月支出</span><span style="font-family:var(--mono);color:var(--red)">-${fmt(monthExpense)}</span></div>
+      ${ccTotal > 0 ? `<div style="display:flex;justify-content:space-between;padding-left:10px;font-size:11px;color:var(--text-hint)"><span>└ うちクレカ利用分（上記に含む・引落は翌月以降）</span><span style="font-family:var(--mono)">${fmt(ccTotal)}</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between"><span>ローン・借金返済</span><span style="font-family:var(--mono);color:var(--red)">-${fmt(loanTotal)}</span></div>
+      ${unpaidThisMonth > 0 ? `<div style="display:flex;justify-content:space-between"><span>⚠ 今月分の未払い（未払い一覧より）</span><span style="font-family:var(--mono);color:var(--gold)">-${fmt(unpaidThisMonth)}</span></div>` : ''}
+    </div>
+    ${endBalance < 0 ? `<div style="margin-top:12px;padding:10px 12px;background:#330000;border:3px solid var(--red);font-size:12px;color:var(--red)">💀 ざんだかが　たりません！　しゅうしを　みなおしてください！</div>` : ''}
+    ${endBalance >= 0 && endBalance < loanTotal + unpaidThisMonth ? `<div style="margin-top:12px;padding:10px 12px;background:#2a2000;border:3px solid var(--gold);font-size:12px;color:var(--gold)">⚠ こんげつの　ひきおとし・へんさいがく が　ざんだかを　こえるかもしれません！</div>` : ''}
+  `;
+  // 振替一覧
+  const transferEl = document.getElementById('transfer-list');
+  const transfers = b.transfers || [];
+  transferEl.innerHTML = transfers.length ? transfers.slice(0, 20).map(t => `
+    <div class="entry">
+      <span style="font-size:11px;color:var(--text-hint);font-family:var(--mono);white-space:nowrap">${t.date.slice(5).replace('-','/')}</span>
+      <span class="entry-name" style="display:flex;align-items:center;gap:6px">
+        <span style="color:var(--red)">${t.fromName}</span>
+        <span style="color:var(--text-hint)">→</span>
+        <span style="color:var(--green)">${t.toName}</span>
+      </span>
+      <span style="font-family:var(--mono);font-size:12px;color:var(--mp);white-space:nowrap">${fmt(t.amount)}</span>
+      <button class="del-btn" onclick="deleteTransfer(${t.id})" title="取り消し">×</button>
+    </div>`).join('') : '';
+
+  updateTransferSelects(b.accounts);
+  updateAccountSelects();
+  renderUnpaidList();
+  renderPayoffSim();
+  updateNotifStatus();
+  renderFactoringList();
+  renderFactoringComparison();
+}
+
+// ---- バックアップ ----
+function gatherAllLocalData() {
+  return {
+    state,
+    balance: JSON.parse(localStorage.getItem('cf-balance-v1') || 'null'),
+    budget: JSON.parse(localStorage.getItem('cf-budget-v1') || 'null'),
+    level: JSON.parse(localStorage.getItem('cf-level-v1') || 'null'),
+    unpaid: JSON.parse(localStorage.getItem('cf-unpaid-v1') || 'null'),
+    templates: JSON.parse(localStorage.getItem('cf-templates-v1') || 'null'),
+    goals: JSON.parse(localStorage.getItem('cf-goals-v1') || 'null'),
+    allocation: JSON.parse(localStorage.getItem('cf-allocation-v1') || 'null'),
+    rewards: JSON.parse(localStorage.getItem('cf-rewards-v1') || 'null'),
+    factoring: JSON.parse(localStorage.getItem('cf-factoring-v1') || 'null'),
+    // 「毎回その場の現在時刻」ではなく、実際にローカルデータが最後に変更された時刻を使う
+    updatedAt: parseInt(localStorage.getItem('cf-local-updated-at') || '0') || Date.now()
+  };
+}
+
+function applyAllLocalData(data) {
+  // クラウドからの反映中は「ローカル変更」として扱わないようフラグを立てる
+  window.__isApplyingRemoteSync = true;
+  if (data.state) { state = data.state; saveState(); }
+  if (data.balance) localStorage.setItem('cf-balance-v1', JSON.stringify(data.balance));
+  if (data.budget) localStorage.setItem('cf-budget-v1', JSON.stringify(data.budget));
+  if (data.level) localStorage.setItem('cf-level-v1', JSON.stringify(data.level));
+  if (data.unpaid) localStorage.setItem('cf-unpaid-v1', JSON.stringify(data.unpaid));
+  if (data.templates) localStorage.setItem('cf-templates-v1', JSON.stringify(data.templates));
+  if (data.goals) localStorage.setItem('cf-goals-v1', JSON.stringify(data.goals));
+  if (data.allocation) localStorage.setItem('cf-allocation-v1', JSON.stringify(data.allocation));
+  if (data.rewards) localStorage.setItem('cf-rewards-v1', JSON.stringify(data.rewards));
+  if (data.factoring) localStorage.setItem('cf-factoring-v1', JSON.stringify(data.factoring));
+  window.__isApplyingRemoteSync = false;
+  // 反映した時点＝クラウドの更新時刻を、ローカルの基準時刻としてそのまま採用
+  if (data.updatedAt) localStorage.setItem('cf-local-updated-at', String(data.updatedAt));
+  renderAll();
+}
+
+function downloadBackup() {
+  const data = { ...gatherAllLocalData(), exportedAt: new Date().toISOString(), version: 2 };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cf_backup_${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function restoreBackup() {
+  const file = document.getElementById('restore-file').files[0];
+  const msg = document.getElementById('restore-msg');
+  if (!file) { msg.style.color='var(--red)'; msg.textContent='ファイルを選択してください'; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.state || !data.state.personal || !data.state.business) throw new Error('形式が違います');
+      applyAllLocalData(data);
+      msg.style.color = 'var(--green)';
+      msg.textContent = '✓ 復元しました！';
+    } catch(err) {
+      msg.style.color = 'var(--red)';
+      msg.textContent = 'エラー：正しいバックアップファイルを選択してください';
+    }
+  };
+  reader.readAsText(file);
+}
+
+function resetData() {
+  if (!confirm('全データを削除しますか？この操作は元に戻せません。')) return;
+  state = {
+    personal: { month: now.getMonth(), year: now.getFullYear(), entries: {} },
+    business: { month: now.getMonth(), year: now.getFullYear(), entries: {} }
+  };
+  saveState();
+  renderAll();
+  alert('データを削除しました');
+}
+
+function renderAll() {
+  renderMetrics('personal');
+  renderEntries('personal');
+  renderTemplates('personal');
+  renderWeeklySummary();
+  renderMetrics('business');
+  renderEntries('business');
+  renderTemplates('business');
+  updateNameAutocomplete();
+  renderReceivables();
+  renderDependencyChart();
+
+  const { month: pm, year: py } = state.personal;
+  const { month: bm, year: by } = state.business;
+  const pMonths = getMonthRange(py, pm, 6);
+  const bMonths = getMonthRange(by, bm, 6);
+  renderBarChart('personal-chart',
+    pMonths.map(({month:m})=>MONTHS[m]),
+    pMonths.map(({year:y,month:m})=>getEntries('personal',y,m).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0)),
+    pMonths.map(({year:y,month:m})=>getEntries('personal',y,m).filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0))
+  );
+  renderBarChart('business-chart',
+    bMonths.map(({month:m})=>MONTHS[m]),
+    bMonths.map(({year:y,month:m})=>getEntries('business',y,m).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0)),
+    bMonths.map(({year:y,month:m})=>getEntries('business',y,m).filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0)),
+    '売上','経費'
+  );
+  renderOverview();
+  renderAnnual();
+  renderBudget();
+  renderBalance();
+  renderLevel();
+}
+
+function toggleSubMenu() {
+  const menu = document.getElementById('sub-menu');
+  const btn = document.getElementById('sub-menu-toggle');
+  const isOpen = menu.classList.toggle('open');
+  btn.classList.toggle('active', isOpen);
+}
+
+// サブメニュー外クリックで閉じる
+document.addEventListener('click', e => {
+  const menu = document.getElementById('sub-menu');
+  const btn = document.getElementById('sub-menu-toggle');
+  if (!menu.contains(e.target) && !btn.contains(e.target)) {
+    menu.classList.remove('open');
+    btn.classList.remove('active');
+  }
+});
+
+function switchTab(name) {
+  const mainTabs = ['personal','business','balance'];
+  const allTabs = ['personal','business','balance','overview','annual','budget','backup'];
+  // メインタブのみボタンをハイライト
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', mainTabs[i]===name));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+  renderAll();
+}
+
+renderAll();
+updateAccountSelects();
+
+// PWA Service Worker 登録
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('SW registered:', reg.scope))
+      .catch(err => console.log('SW error:', err));
+  });
+}
+</script>
+
+<script type="module">
+  // 共有ビューモードの時は、Firebase等の初期化を一切行わない
+  if (new URLSearchParams(location.search).get('share')) {
+    throw new Error('SHARE_MODE_STOP');
+  }
+
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAMu3nclmoUz9KBo4yJWdqO7McWmXF3ieg",
+    authDomain: "casshflow-4af42.firebaseapp.com",
+    projectId: "casshflow-4af42",
+    storageBucket: "casshflow-4af42.firebasestorage.app",
+    messagingSenderId: "961279756403",
+    appId: "1:961279756403:web:038e0976f7c11f05ea4206"
+  };
+
+  const fbApp = initializeApp(firebaseConfig);
+  const db = getFirestore(fbApp);
+
+  async function hashPassphrase(pass) {
+    const enc = new TextEncoder().encode(pass);
+    const buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  let syncDocId = localStorage.getItem('cf-sync-docid') || null;
+  let lastSyncedAt = 0; // 自分の書き込みエコーを無視するための基準値
+  let unsubscribeSnapshot = null;
+
+  function updateSyncStatus(text, color) {
+    const el = document.getElementById('sync-status');
+    if (!el) return;
+    if (text) { el.textContent = text; el.style.color = color || 'var(--text-hint)'; return; }
+    if (syncDocId) {
+      const last = localStorage.getItem('cf-sync-last');
+      el.textContent = `📡 リアルタイム同期ON${last ? '（最終更新: ' + new Date(parseInt(last)).toLocaleString('ja-JP') + '）' : ''}`;
+      el.style.color = 'var(--green)';
+    } else {
+      el.textContent = '未設定';
+      el.style.color = 'var(--text-hint)';
+    }
+  }
+
+  function startListening() {
+    if (unsubscribeSnapshot) { unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+    if (!syncDocId) return;
+    unsubscribeSnapshot = onSnapshot(doc(db, 'cf-sync', syncDocId), (snap) => {
+      if (!snap.exists()) return;
+      const cloud = snap.data();
+      if ((cloud.updatedAt || 0) > lastSyncedAt) {
+        lastSyncedAt = cloud.updatedAt;
+        window.applyAllLocalData(cloud);
+        localStorage.setItem('cf-sync-last', String(Date.now()));
+        updateSyncStatus();
+      }
+    }, (err) => {
+      console.error('listen error', err);
+      updateSyncStatus('❌ 同期エラー（通信状況をご確認ください）', 'var(--red)');
+    });
+  }
+
+  async function pushToCloud() {
+    if (!syncDocId) return;
+    updateSyncStatus('⏳ アップロード中...', 'var(--gold)');
+    try {
+      const data = window.gatherAllLocalData();
+      lastSyncedAt = data.updatedAt; // 自分の書き込みのエコーを無視するため先に更新
+      await setDoc(doc(db, 'cf-sync', syncDocId), data);
+      localStorage.setItem('cf-sync-last', String(Date.now()));
+      updateSyncStatus();
+    } catch (e) {
+      console.error('push error', e);
+      updateSyncStatus('❌ 同期エラー（時間をおいて再度お試しください）', 'var(--red)');
+    }
+  }
+
+  async function pullFromCloud(silent) {
+    if (!syncDocId) return;
+    updateSyncStatus('⏳ 取得中...', 'var(--gold)');
+    try {
+      const snap = await getDoc(doc(db, 'cf-sync', syncDocId));
+      if (snap.exists()) {
+        const cloud = snap.data();
+        const localData = window.gatherAllLocalData();
+        const localHasData = localData.state && (
+          Object.keys(localData.state.personal.entries || {}).length > 0 ||
+          Object.keys(localData.state.business.entries || {}).length > 0
+        );
+        if (!localHasData) {
+          lastSyncedAt = cloud.updatedAt || 0;
+          window.applyAllLocalData(cloud);
+        } else if ((cloud.updatedAt || 0) > (localData.updatedAt || 0)) {
+          if (silent || confirm('クラウドの方が新しいデータがあります。この端末に反映しますか？\n（キャンセルすると、この端末のデータでクラウドを上書きします）')) {
+            lastSyncedAt = cloud.updatedAt || 0;
+            window.applyAllLocalData(cloud);
+          } else {
+            await pushToCloud();
+          }
+        } else if (!silent) {
+          alert('すでに最新の状態です');
+        }
+        localStorage.setItem('cf-sync-last', String(Date.now()));
+      } else {
+        // クラウドにまだ何もなければ、ローカルをアップロード
+        await pushToCloud();
+      }
+      updateSyncStatus();
+    } catch (e) {
+      console.error('pull error', e);
+      updateSyncStatus('❌ 同期エラー（時間をおいて再度お試しください）', 'var(--red)');
+    }
+  }
+
+  let syncTimer = null;
+  function scheduleSync() {
+    if (!syncDocId) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(pushToCloud, 1500);
+  }
+
+  function disableSync() {
+    if (unsubscribeSnapshot) { unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+    localStorage.removeItem('cf-sync-docid');
+    localStorage.removeItem('cf-sync-last');
+    syncDocId = null;
+    updateSyncStatus();
+  }
+
+  // localStorageへの書き込みを監視して自動的にクラウド同期をスケジュール
+  const SYNCED_KEYS = ['cf-manager-v1', 'cf-balance-v1', 'cf-budget-v1', 'cf-level-v1', 'cf-unpaid-v1', 'cf-templates-v1', 'cf-goals-v1', 'cf-allocation-v1', 'cf-rewards-v1', 'cf-factoring-v1'];
+  const origSetItem = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key, value) {
+    origSetItem(key, value);
+    // クラウドからの反映中に発生した書き込みは「ローカル変更」としてカウントしない
+    if (SYNCED_KEYS.includes(key) && !window.__isApplyingRemoteSync) {
+      origSetItem('cf-local-updated-at', String(Date.now()));
+      scheduleSync();
+    }
+  };
+
+  window.handleSetupSync = async () => {
+    const input = document.getElementById('sync-passphrase');
+    const val = input.value.trim();
+    if (!val || val.length < 4) { alert('合言葉は4文字以上で入力してください'); return; }
+    syncDocId = await hashPassphrase(val);
+
+    updateSyncStatus('⏳ 確認中...', 'var(--gold)');
+
+    const localData = window.gatherAllLocalData();
+    const localHasData = localData.state && (
+      Object.keys(localData.state.personal.entries || {}).length > 0 ||
+      Object.keys(localData.state.business.entries || {}).length > 0
+    );
+
+    let cloudData = null, cloudHasData = false;
+    try {
+      const snap = await getDoc(doc(db, 'cf-sync', syncDocId));
+      if (snap.exists()) {
+        cloudData = snap.data();
+        cloudHasData = cloudData.state && (
+          Object.keys(cloudData.state.personal.entries || {}).length > 0 ||
+          Object.keys(cloudData.state.business.entries || {}).length > 0
+        );
+      }
+    } catch (e) {
+      console.error('setup check error', e);
+      updateSyncStatus('❌ 確認に失敗しました。時間をおいて再度お試しください', 'var(--red)');
+      return;
+    }
+
+    localStorage.setItem('cf-sync-docid', syncDocId);
+    input.value = '';
+
+    if (!cloudHasData) {
+      // クラウドにまだデータがない → この端末のデータをアップロード
+      lastSyncedAt = localData.updatedAt || 0;
+      await pushToCloud();
+    } else if (!localHasData) {
+      // この端末にまだデータがない → クラウドのデータを取得
+      lastSyncedAt = cloudData.updatedAt || 0;
+      window.applyAllLocalData(cloudData);
+    } else {
+      // 両方にデータがある → どちらを使うか確認する
+      const useCloud = confirm(
+        'クラウドにも、この端末にもデータがあります。\n\n' +
+        'OK：クラウドのデータをこの端末に反映する\n' +
+        'キャンセル：この端末のデータでクラウドを上書きする\n\n' +
+        '（あとで違う方を選びたい場合は、バックアップからJSONで復元できます）'
+      );
+      if (useCloud) {
+        lastSyncedAt = cloudData.updatedAt || 0;
+        window.applyAllLocalData(cloudData);
+      } else {
+        lastSyncedAt = localData.updatedAt || 0;
+        await pushToCloud();
+      }
+    }
+
+    startListening();
+    updateSyncStatus();
+    alert('クラウド同期を設定しました！他の端末でも同じ合言葉を入力すれば、自動的にリアルタイムで同期されます。');
+  };
+  window.pushToCloud = () => pushToCloud();
+  window.pullFromCloud = () => pullFromCloud(false);
+  window.disableSync = disableSync;
+
+  updateSyncStatus();
+  if (syncDocId) {
+    pullFromCloud(true).then(() => startListening());
+  }
+</script>
+</body>
+</html>
