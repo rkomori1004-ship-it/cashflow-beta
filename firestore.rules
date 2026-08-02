@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /cf-sync/{docId} {
+      allow read, write: if true;
+
+      match /chatThreads/{month}/messages/{messageId} {
+        allow read: if true;   // チャットUI表示用（onSnapshot）
+        allow write: if false; // 書き込みはCloud Functions（Admin SDK）経由のみ
+      }
+      match /reports/{month} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+  }
+}

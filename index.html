@@ -553,6 +553,7 @@ select option { background: #0d0d35; }
     <div class="sub-menu-item" onclick="switchTab('overview');toggleSubMenu()">📊 そうごう</div>
     <div class="sub-menu-item" onclick="switchTab('annual');toggleSubMenu()">📅 ねんかん</div>
     <div class="sub-menu-item" onclick="switchTab('budget');toggleSubMenu()">🎯 もくひょう</div>
+    <div class="sub-menu-item" onclick="switchTab('advisor');toggleSubMenu()">🤖 AIアドバイザー</div>
     <div class="sub-menu-item" onclick="switchTab('backup');toggleSubMenu()">💾 セーブ</div>
   </div>
 
@@ -878,6 +879,12 @@ select option { background: #0d0d35; }
       <button class="csv-btn" onclick="closeMonth()" style="border-color:var(--mp);color:var(--mp)">📅 来月に進んで固定費を追加</button>
     </div>
     <div class="metrics" id="overview-metrics"></div>
+    <div class="card" style="border-color:var(--gold)">
+      <div class="card-title" style="color:var(--gold)">🤖 先月のAIレポート</div>
+      <div id="monthly-ai-report">
+        <p style="font-size:12px;color:var(--text-muted)">クラウド同期を設定すると、毎月1日に先月分のAIレポートが自動生成されます。</p>
+      </div>
+    </div>
     <div class="card">
       <div class="card-title">全体収支推移（6ヶ月）</div>
       <div class="legend">
@@ -1050,6 +1057,27 @@ select option { background: #0d0d35; }
       <div class="card-title">💀 ぼうけんのしょを　きえる</div>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">ぜんデータを　さくじょします。このそうさは　もとにもどせません。</p>
       <button class="csv-btn" onclick="resetData()" style="border-color:var(--red);color:var(--red);background:#1a0000">💀 きえてしまえ！</button>
+    </div>
+  </div>
+
+  <!-- AIアドバイザー -->
+  <div id="tab-advisor" class="section">
+    <div class="card" id="advisor-unavailable" style="border-color:var(--red);display:none">
+      <div class="card-title" style="color:var(--red)">🤖 AIアドバイザー</div>
+      <p style="font-size:12px;color:var(--text-muted)">この機能を使うには、まず「セーブ」タブでクラウド同期（合言葉）を設定してください。</p>
+    </div>
+    <div class="card" id="advisor-panel" style="border-color:var(--gold)">
+      <div class="card-title" style="color:var(--gold)">🤖 AIアドバイザーに相談する（<span id="advisor-month-label"></span>）</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">今月の収支データと直近6ヶ月の傾向を踏まえてAIが回答します。会話はこの月のスレッドに保存されます。</p>
+      <div id="advisor-chat-log" style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="advisor-input" placeholder="例：今月使いすぎているものは？" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter')sendAdvisorMessage()">
+        <button class="csv-btn" id="advisor-send-btn" onclick="sendAdvisorMessage()" style="border-color:var(--gold);color:var(--gold)">送信</button>
+      </div>
+      <div style="margin-top:10px">
+        <button class="csv-btn" onclick="resetAdvisorChat()" style="border-color:var(--red);color:var(--red);font-size:11px">🗑️ 今月の会話をリセット</button>
+      </div>
+      <div id="advisor-error" style="color:var(--red);font-size:12px;margin-top:8px"></div>
     </div>
   </div>
 </div>
@@ -3997,12 +4025,13 @@ document.addEventListener('click', e => {
 
 function switchTab(name) {
   const mainTabs = ['personal','business','balance'];
-  const allTabs = ['personal','business','balance','overview','annual','budget','backup'];
+  const allTabs = ['personal','business','balance','overview','annual','budget','backup','advisor'];
   // メインタブのみボタンをハイライト
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', mainTabs[i]===name));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.getElementById(`tab-${name}`).classList.add('active');
   renderAll();
+  if (name === 'advisor' && window.renderAdvisorTab) window.renderAdvisorTab();
 }
 
 renderAll();
@@ -4025,7 +4054,8 @@ if ('serviceWorker' in navigator) {
   }
 
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAMu3nclmoUz9KBo4yJWdqO7McWmXF3ieg",
@@ -4229,7 +4259,118 @@ if ('serviceWorker' in navigator) {
   updateSyncStatus();
   if (syncDocId) {
     pullFromCloud(true).then(() => startListening());
+    loadMonthlyReport();
   }
+
+  // ---- AIアドバイザー ----
+  const functionsClient = getFunctions(fbApp);
+  const adviceChatFn = httpsCallable(functionsClient, 'adviceChat');
+  const resetChatThreadFn = httpsCallable(functionsClient, 'resetChatThread');
+
+  let advisorUnsub = null;
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function renderAdvisorMessages(msgs) {
+    const log = document.getElementById('advisor-chat-log');
+    if (!log) return;
+    log.innerHTML = msgs.length
+      ? msgs.map((m) => `
+          <div style="align-self:${m.role === 'user' ? 'flex-end' : 'flex-start'};max-width:85%;border:1px solid ${m.role === 'user' ? 'var(--mp)' : 'var(--gold)'};border-radius:8px;padding:8px 10px;font-size:13px;white-space:pre-wrap">${escapeHtml(m.text)}</div>
+        `).join('')
+      : '<p style="font-size:12px;color:var(--text-muted)">まだ会話はありません。下の欄から質問してみましょう。</p>';
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function renderAdvisorTab() {
+    const unavailable = document.getElementById('advisor-unavailable');
+    const panel = document.getElementById('advisor-panel');
+    if (!unavailable || !panel) return;
+
+    if (!syncDocId) {
+      unavailable.style.display = '';
+      panel.style.display = 'none';
+      if (advisorUnsub) { advisorUnsub(); advisorUnsub = null; }
+      return;
+    }
+    unavailable.style.display = 'none';
+    panel.style.display = '';
+
+    const month = mkey(state.personal.year, state.personal.month);
+    document.getElementById('advisor-month-label').textContent = `${state.personal.year}年${state.personal.month + 1}月`;
+
+    if (advisorUnsub) { advisorUnsub(); advisorUnsub = null; }
+    const q = query(
+      collection(db, 'cf-sync', syncDocId, 'chatThreads', month, 'messages'),
+      orderBy('createdAt', 'asc'),
+      limit(50)
+    );
+    advisorUnsub = onSnapshot(q, (snap) => {
+      renderAdvisorMessages(snap.docs.map((d) => d.data()));
+    }, (err) => {
+      console.error('advisor chat listen error', err);
+    });
+  }
+  window.renderAdvisorTab = renderAdvisorTab;
+
+  window.sendAdvisorMessage = async () => {
+    const input = document.getElementById('advisor-input');
+    const errEl = document.getElementById('advisor-error');
+    const btn = document.getElementById('advisor-send-btn');
+    const question = input.value.trim();
+    errEl.textContent = '';
+    if (!question) return;
+    if (!syncDocId) { errEl.textContent = '先にクラウド同期を設定してください'; return; }
+
+    const month = mkey(state.personal.year, state.personal.month);
+    input.value = '';
+    btn.disabled = true;
+    btn.textContent = '送信中...';
+    try {
+      await adviceChatFn({ syncDocId, month, question });
+    } catch (e) {
+      console.error('adviceChat error', e);
+      errEl.textContent = 'AIへの相談に失敗しました。時間をおいて再度お試しください';
+      input.value = question;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '送信';
+    }
+  };
+
+  window.resetAdvisorChat = async () => {
+    if (!syncDocId) return;
+    if (!confirm('今月の会話をリセットします。よろしいですか？')) return;
+    const month = mkey(state.personal.year, state.personal.month);
+    try {
+      await resetChatThreadFn({ syncDocId, month });
+    } catch (e) {
+      console.error('resetChatThread error', e);
+      alert('リセットに失敗しました。時間をおいて再度お試しください');
+    }
+  };
+
+  // ---- 月末自動レポート表示 ----
+  async function loadMonthlyReport() {
+    const el = document.getElementById('monthly-ai-report');
+    if (!el || !syncDocId) return;
+    let py = state.personal.year, pm = state.personal.month - 1;
+    if (pm < 0) { pm = 11; py--; }
+    const reportMonthKey = mkey(py, pm);
+    try {
+      const snap = await getDoc(doc(db, 'cf-sync', syncDocId, 'reports', reportMonthKey));
+      if (snap.exists()) {
+        el.innerHTML = `<div style="font-size:13px;white-space:pre-wrap;line-height:1.6">${escapeHtml(snap.data().summaryText)}</div>`;
+      } else {
+        el.innerHTML = '<p style="font-size:12px;color:var(--text-muted)">先月分のレポートはまだ生成されていません（毎月1日に自動生成されます）。</p>';
+      }
+    } catch (e) {
+      console.error('loadMonthlyReport error', e);
+    }
+  }
+  window.loadMonthlyReport = loadMonthlyReport;
 </script>
 </body>
 </html>
