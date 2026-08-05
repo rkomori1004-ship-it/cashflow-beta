@@ -4681,13 +4681,30 @@ async function parseCsvFile() {
     }
   });
 
-  // 重複チェック
+  // 重複チェック（1: 過去インポートのハッシュ照合）
   const hashes = loadImportHashes();
   for (const r of rows) {
     const h = await hashPassphrase(`${r.date}|${r.amount}|${r.description}`);
     r._hash = h;
     r.dup = hashes.has(h);
     r.skip = r.dup;
+  }
+
+  // 重複チェック（2: 手動入力済みエントリとの照合 — 日付＋金額＋支払い方法）
+  const dateSet = new Set(rows.filter(r => !r.dup && r.date).map(r => r.date.slice(0, 7)));
+  for (const ym of dateSet) {
+    const [ey, em1] = ym.split('-').map(Number);
+    const existing = getEntries('personal', ey, em1 - 1); // 0-indexed month
+    for (const r of rows) {
+      if (r.dup || !r.date || r.date.slice(0, 7) !== ym) continue;
+      const match = existing.find(e => {
+        if (e.date !== r.date) return false;
+        if (e.amount !== r.amount) return false;
+        if (r.isCard) return e.cardId != null && e.cardId === r.cardId;
+        return e.accountId != null && e.accountId === r.accountId;
+      });
+      if (match) { r.dup = true; r.skip = true; }
+    }
   }
 
   _csvRows = rows;
