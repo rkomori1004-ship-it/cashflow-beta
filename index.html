@@ -2148,13 +2148,53 @@ function saveAsTemplate(mode, type) {
   });
   saveTemplates(list);
 
-  // 現在表示中の月に即座にエントリを追加
+  // 現在表示中の月に即座にエントリを追加（addFromTemplateを経由せず直接構築）
   const { year, month } = state[mode];
   const today = new Date();
   const todayDay = today.getDate();
   const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
   const defer = isCurrentMonth && validDay && validDay > todayDay;
-  addFromTemplate(tplId, { deferBalance: defer, silent: true });
+  const paymentRaw = accEl ? accEl.value : '';
+
+  const entry = { id: Date.now(), name, amount, type, cat: catEl.value, templateAutoAdded: true };
+  if (validDay) {
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const d = Math.min(validDay, lastDay);
+    entry.date = `${year}-${String(month + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  } else {
+    entry.date = getTodayKey();
+  }
+  if (defer) {
+    entry.paid = false;
+    entry.balanceApplied = false;
+    if (paymentRaw.startsWith('acc-')) {
+      const accId = parseInt(paymentRaw.slice(4));
+      const b = loadBalance();
+      const acc = b.accounts.find(a => a.id === accId);
+      if (acc) { entry.accountId = accId; entry.accountName = acc.name; }
+    } else if (paymentRaw.startsWith('card-')) {
+      const cardId = parseInt(paymentRaw.slice(5));
+      const b = loadBalance();
+      const card = (b.cards || []).find(c => c.id === cardId);
+      if (card) { entry.cardId = cardId; entry.cardName = card.name; }
+    }
+  } else {
+    if (!isInc) entry.paid = true;
+    if (paymentRaw.startsWith('acc-')) {
+      const accId = parseInt(paymentRaw.slice(4));
+      const b = loadBalance();
+      const acc = b.accounts.find(a => a.id === accId);
+      if (acc) { entry.accountId = accId; entry.accountName = acc.name; acc.balance += isInc ? amount : -amount; saveBalance(b); entry.balanceApplied = true; }
+    } else if (paymentRaw.startsWith('card-')) {
+      const cardId = parseInt(paymentRaw.slice(5));
+      const b = loadBalance();
+      const card = (b.cards || []).find(c => c.id === cardId);
+      if (card) { entry.cardId = cardId; entry.cardName = card.name; }
+    }
+  }
+  const monthEntries = getEntries(mode, year, month);
+  monthEntries.unshift(entry);
+  setEntries(mode, year, month, monthEntries);
 
   alert(`「${name}」を固定費テンプレートに登録し、今月分を追加しました！${validDay ? `（毎月${validDay}日）` : ''}`);
   renderAll();
