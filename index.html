@@ -2134,14 +2134,17 @@ function saveAsTemplate(mode, type) {
     alert('内容と金額を入力してから「📌」を押してください');
     return;
   }
+  const dayInput = prompt(`「${name}」の支払日を入力してください（毎月◯日）\n※スキップする場合はキャンセル`, '');
+  const day = dayInput !== null ? parseInt(dayInput) : null;
   const list = loadTemplates();
   list.push({
     id: Date.now(), mode, type,
     name, amount, cat: catEl.value,
-    paymentRaw: accEl ? accEl.value : ''
+    paymentRaw: accEl ? accEl.value : '',
+    day: (day >= 1 && day <= 31) ? day : null
   });
   saveTemplates(list);
-  alert(`「${name}」を固定費テンプレートに登録しました！`);
+  alert(`「${name}」を固定費テンプレートに登録しました！${(day >= 1 && day <= 31) ? `（毎月${day}日）` : ''}`);
   renderAll();
 }
 
@@ -2153,7 +2156,13 @@ function addFromTemplate(id) {
   const entries = getEntries(mode, year, month);
   const isInc = type === 'income';
   const entry = { id: Date.now(), name: tpl.name, amount: tpl.amount, type, cat: tpl.cat };
-  entry.date = getTodayKey();
+  if (tpl.day) {
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const d = Math.min(tpl.day, lastDay);
+    entry.date = `${year}-${String(month + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  } else {
+    entry.date = getTodayKey();
+  }
   if (!isInc) entry.paid = true;
 
   if (tpl.paymentRaw && tpl.paymentRaw.startsWith('acc-')) {
@@ -2192,7 +2201,7 @@ function renderTemplates(mode) {
   el.innerHTML = list.length ? list.map(t => `
     <div class="entry">
       <span class="entry-cat ${t.type==='income'?'cat-inc':'cat-exp'}">${t.type==='income'?'収入':'支出'}</span>
-      <span class="entry-name">${t.name}<span class="acc-badge">${t.cat}</span></span>
+      <span class="entry-name">${t.name}<span class="acc-badge">${t.cat}</span>${t.day?`<span class="acc-badge" style="border-color:var(--text-muted);color:var(--text-muted)">毎月${t.day}日</span>`:''}</span>
       <span class="entry-amount ${t.type==='income'?'inc':'exp'}">${t.type==='income'?'+':'-'}${fmt(t.amount)}</span>
       <button class="del-btn" style="color:var(--mp)" onclick="addFromTemplate(${t.id})" title="今月分として追加">➕</button>
       <button class="del-btn" onclick="deleteTemplate(${t.id})" title="テンプレ削除">×</button>
