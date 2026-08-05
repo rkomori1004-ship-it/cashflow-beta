@@ -5261,16 +5261,27 @@ function parseRakuten(lines) {
 }
 
 function parseSBI(lines) {
-  // 列順: 日付, 内容, 出金額(円), 入金額(円), 残高(円)
+  // ドコモSMTBネット銀行 / 住信SBIネット銀行 共通
+  // ヘッダーから列番号を動的に検出する（列順がバンクによって異なるため）
   const header = csvSplit(lines[0] || '');
-  const balCol = header.findIndex(c => c.includes('残高'));
+  const dateCol  = header.findIndex(c => c.includes('日付') || c.includes('取引日') || c.includes('年月日'));
+  const descCol  = header.findIndex(c => c.includes('摘要') || c.includes('内容') || c.includes('取引内容'));
+  const outCol   = header.findIndex(c => c.includes('出金') || c.includes('引出'));
+  const incCol   = header.findIndex(c => c.includes('入金') || c.includes('預入'));
+  const balCol   = header.findIndex(c => c.includes('残高'));
+  // ヘッダーが検出できない場合は従来の固定列にフォールバック
+  const DC = dateCol  >= 0 ? dateCol  : 0;
+  const DESC = descCol >= 0 ? descCol : 1;
+  const OC = outCol   >= 0 ? outCol   : 2;
+  const IC = incCol   >= 0 ? incCol   : 3;
+  const startLine = (dateCol >= 0 || outCol >= 0) ? 1 : 1;
   const rows = [];
-  for (let i = 1; i < lines.length; i++) {
+  for (let i = startLine; i < lines.length; i++) {
     const cols = csvSplit(lines[i]);
-    if (cols.length < 4) continue;
-    const date = parseDate(cols[0]); if (!date.match(/^\d{4}-/)) continue;
-    const desc = cols[1] || '';
-    const out = toNum(cols[2]); const inc = toNum(cols[3]);
+    if (cols.length < 3) continue;
+    const date = parseDate(cols[DC] || ''); if (!date.match(/^\d{4}-/)) continue;
+    const desc = cols[DESC] || '';
+    const out = toNum(cols[OC]); const inc = IC < cols.length ? toNum(cols[IC]) : 0;
     if (out === 0 && inc === 0) continue;
     const amount = out > 0 ? out : inc;
     const row = detectType(out > 0 ? 'out' : 'in', desc, amount);
@@ -5680,8 +5691,7 @@ async function registerCsvEntries() {
   document.getElementById('csv-register-msg').textContent = `✔ ${toReg.length}件を登録しました`;
   document.getElementById('csv-register-btn').disabled = true;
 
-  renderBalance();
-  renderPersonal();
+  renderAll();
 }
 
 // ---- 初期化 ----
