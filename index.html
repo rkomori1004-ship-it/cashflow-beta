@@ -4880,19 +4880,26 @@ function parseDate(str) {
 function toNum(s) { return parseFloat((s||'').replace(/,/g,'').trim()) || 0; }
 
 function parseMUFG(lines) {
-  // ヘッダー行を「取引日」or「年月日」が含まれる行まで読み飛ばし
+  // ヘッダー行を「取引日」or「年月日」or「日付」が含まれる行まで読み飛ばし、列順を判定
   let start = 1;
+  let outCol = 2, incCol = 3, descCol = 1; // デフォルト: 日付,摘要,出金,入金
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('取引日') || lines[i].includes('年月日')) { start = i + 1; break; }
+    const l = lines[i];
+    if (l.includes('取引日') || l.includes('年月日') || l.includes('日付')) {
+      start = i + 1;
+      // 9列フォーマット（日付,取引,取引内容,出金,入金,...）かどうかを列数で判定
+      const cols = csvSplit(l);
+      if (cols.length >= 5) { outCol = 3; incCol = 4; descCol = 2; }
+      break;
+    }
   }
-  // 列順: 年月日, 摘要, 出金金額, 入金金額, 残高, メモ
   const rows = [];
   for (let i = start; i < lines.length; i++) {
     const cols = csvSplit(lines[i]);
-    if (cols.length < 4) continue;
+    if (cols.length < incCol + 1) continue;
     const date = parseDate(cols[0]); if (!date.match(/^\d{4}-/)) continue;
-    const desc = cols[1] || '';
-    const out = toNum(cols[2]); const inc = toNum(cols[3]);
+    const desc = (cols[descCol] || cols[1] || '').trim();
+    const out = toNum(cols[outCol]); const inc = toNum(cols[incCol]);
     if (out === 0 && inc === 0) continue;
     const amount = out > 0 ? out : inc;
     const row = detectType(out > 0 ? 'out' : 'in', desc, amount);
