@@ -3142,11 +3142,14 @@ function loadSavingsGoal() { try { return JSON.parse(localStorage.getItem('cf-sa
 function saveSavingsGoal(g) { localStorage.setItem('cf-savings-goal-v1', JSON.stringify(g)); }
 
 function saveBudgetAndGoal() {
-  saveBudget();
+  // 入力値を先に読む（saveBudget→renderBudget が入力欄を上書きするため）
   const v = parseFloat(document.getElementById('savings-goal-input').value);
+  saveBudget();
   const g = loadSavingsGoal();
   if (!isNaN(v) && v >= 0) { g.monthlyGoal = v; } else { delete g.monthlyGoal; }
   saveSavingsGoal(g);
+  const sgEl = document.getElementById('savings-goal-input');
+  if (sgEl && !isNaN(v) && v >= 0) sgEl.value = v; // renderBudgetで上書きされた値を戻す
   renderTodaySpendable();
 }
 
