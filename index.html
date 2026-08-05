@@ -1800,6 +1800,7 @@ function changeMonth(mode, dir) {
   state[mode].month = m;
   state[mode].year = y;
   saveState();
+  autoApplyTemplates();
   renderAll();
 }
 
@@ -2148,7 +2149,7 @@ function saveAsTemplate(mode, type) {
   renderAll();
 }
 
-function addFromTemplate(id) {
+function addFromTemplate(id, { deferBalance = false, silent = false } = {}) {
   const tpl = loadTemplates().find(t => t.id === id);
   if (!tpl) return;
   const { mode, type } = tpl;
@@ -2163,30 +2164,127 @@ function addFromTemplate(id) {
   } else {
     entry.date = getTodayKey();
   }
-  if (!isInc) entry.paid = true;
 
-  if (tpl.paymentRaw && tpl.paymentRaw.startsWith('acc-')) {
-    const accId = parseInt(tpl.paymentRaw.slice(4));
-    const b = loadBalance();
-    const acc = b.accounts.find(a => a.id === accId);
-    if (acc) {
-      entry.accountId = accId;
-      entry.accountName = acc.name;
-      acc.balance += isInc ? tpl.amount : -tpl.amount;
-      saveBalance(b);
-      entry.balanceApplied = true;
+  if (deferBalance) {
+    // 支払い日未到達：エントリは追加するが残高には未反映
+    entry.paid = false;
+    entry.balanceApplied = false;
+    if (tpl.paymentRaw && tpl.paymentRaw.startsWith('acc-')) {
+      const accId = parseInt(tpl.paymentRaw.slice(4));
+      const b = loadBalance();
+      const acc = b.accounts.find(a => a.id === accId);
+      if (acc) { entry.accountId = accId; entry.accountName = acc.name; }
+    } else if (tpl.paymentRaw && tpl.paymentRaw.startsWith('card-')) {
+      const cardId = parseInt(tpl.paymentRaw.slice(5));
+      const b = loadBalance();
+      const card = (b.cards || []).find(c => c.id === cardId);
+      if (card) { entry.cardId = cardId; entry.cardName = card.name; }
     }
-  } else if (tpl.paymentRaw && tpl.paymentRaw.startsWith('card-')) {
-    const cardId = parseInt(tpl.paymentRaw.slice(5));
-    const b = loadBalance();
-    const card = (b.cards || []).find(c => c.id === cardId);
-    if (card) { entry.cardId = cardId; entry.cardName = card.name; }
+  } else {
+    if (!isInc) entry.paid = true;
+    if (tpl.paymentRaw && tpl.paymentRaw.startsWith('acc-')) {
+      const accId = parseInt(tpl.paymentRaw.slice(4));
+      const b = loadBalance();
+      const acc = b.accounts.find(a => a.id === accId);
+      if (acc) {
+        entry.accountId = accId;
+        entry.accountName = acc.name;
+        acc.balance += isInc ? tpl.amount : -tpl.amount;
+        saveBalance(b);
+        entry.balanceApplied = true;
+      }
+    } else if (tpl.paymentRaw && tpl.paymentRaw.startsWith('card-')) {
+      const cardId = parseInt(tpl.paymentRaw.slice(5));
+      const b = loadBalance();
+      const card = (b.cards || []).find(c => c.id === cardId);
+      if (card) { entry.cardId = cardId; entry.cardName = card.name; }
+    }
   }
 
   entries.unshift(entry);
   setEntries(mode, year, month, entries);
-  awardDailyXP();
-  renderAll();
+  if (!silent) { awardDailyXP(); renderAll(); }
+}
+
+// テンプレートを今月まだ自動追加していなければ追加する
+function autoApplyTemplates() {
+  const today = new Date();
+  const todayDay = today.getDate();
+  const appliedKey = 'cf-tpl-applied-v1';
+  const applied = JSON.parse(localStorage.getItem(appliedKey) || '[]');
+
+  ['personal', 'business'].forEach(mode => {
+    const { year, month } = state[mode];
+    const key = `${year}-${String(month + 1).padStart(2,'0')}-${mode}`;
+    if (applied.includes(key)) return;
+
+    const templates = loadTemplates().filter(t => t.mode === mode);
+    if (!templates.length) { applied.push(key); localStorage.setItem(appliedKey, JSON.stringify(applied)); return; }
+
+    // 今表示中の月が実際の今月かチェック
+    const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
+
+    templates.forEach(tpl => {
+      const entries = getEntries(mode, year, month);
+      // 同じテンプレ由来のエントリが既にあればスキップ（tpl.nameで判定）
+      if (entries.some(e => e.name === tpl.name && e.templateAutoAdded)) return;
+
+      // 支払い日が今日以降なら残高を据え置き
+      const defer = isCurrentMonth && tpl.day && tpl.day > todayDay;
+      const opts = { deferBalance: defer, silent: true };
+      const tplEntries = getEntries(mode, year, month);
+      const isInc = tpl.type === 'income';
+      const entry = { id: Date.now() + Math.random(), name: tpl.name, amount: tpl.amount,
+        type: tpl.type, cat: tpl.cat, templateAutoAdded: true };
+
+      if (tpl.day) {
+        const lastDay = new Date(year, month + 1, 0).getDate();
+        const d = Math.min(tpl.day, lastDay);
+        entry.date = `${year}-${String(month + 1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      } else {
+        entry.date = `${year}-${String(month + 1).padStart(2,'0')}-01`;
+      }
+
+      if (defer) {
+        entry.paid = false;
+        entry.balanceApplied = false;
+        if (tpl.paymentRaw && tpl.paymentRaw.startsWith('acc-')) {
+          const accId = parseInt(tpl.paymentRaw.slice(4));
+          const b = loadBalance();
+          const acc = b.accounts.find(a => a.id === accId);
+          if (acc) { entry.accountId = accId; entry.accountName = acc.name; }
+        } else if (tpl.paymentRaw && tpl.paymentRaw.startsWith('card-')) {
+          const cardId = parseInt(tpl.paymentRaw.slice(5));
+          const b = loadBalance();
+          const card = (b.cards || []).find(c => c.id === cardId);
+          if (card) { entry.cardId = cardId; entry.cardName = card.name; }
+        }
+      } else {
+        if (!isInc) entry.paid = true;
+        if (tpl.paymentRaw && tpl.paymentRaw.startsWith('acc-')) {
+          const accId = parseInt(tpl.paymentRaw.slice(4));
+          const b = loadBalance();
+          const acc = b.accounts.find(a => a.id === accId);
+          if (acc) {
+            entry.accountId = accId; entry.accountName = acc.name;
+            acc.balance += isInc ? tpl.amount : -tpl.amount;
+            saveBalance(b); entry.balanceApplied = true;
+          }
+        } else if (tpl.paymentRaw && tpl.paymentRaw.startsWith('card-')) {
+          const cardId = parseInt(tpl.paymentRaw.slice(5));
+          const b = loadBalance();
+          const card = (b.cards || []).find(c => c.id === cardId);
+          if (card) { entry.cardId = cardId; entry.cardName = card.name; }
+        }
+      }
+
+      tplEntries.unshift(entry);
+      setEntries(mode, year, month, tplEntries);
+    });
+
+    applied.push(key);
+    localStorage.setItem(appliedKey, JSON.stringify(applied));
+  });
 }
 
 function deleteTemplate(id) {
@@ -4368,6 +4466,7 @@ function switchTab(name) {
   if (name === 'advisor' && window.renderAdvisorTab) window.renderAdvisorTab();
 }
 
+autoApplyTemplates();
 renderAll();
 updateAccountSelects();
 
