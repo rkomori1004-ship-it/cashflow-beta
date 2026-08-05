@@ -2206,12 +2206,61 @@ function addFromTemplate(id, { deferBalance = false, silent = false } = {}) {
   if (!silent) { awardDailyXP(); renderAll(); }
 }
 
+// 支払い日が来た繰り延べエントリの残高を反映する
+function applyDeferredEntries() {
+  const today = new Date();
+  const todayDay = today.getDate();
+  const todayYear = today.getFullYear();
+  const todayMonth = today.getMonth();
+
+  ['personal', 'business'].forEach(mode => {
+    const { year, month } = state[mode];
+    // 今月分のみ対象
+    if (year !== todayYear || month !== todayMonth) return;
+
+    let entries = getEntries(mode, year, month);
+    let changed = false;
+    const b = loadBalance();
+
+    entries = entries.map(e => {
+      if (!e.templateAutoAdded || e.balanceApplied !== false) return e;
+      // 支払い日（date の日部分）が今日以前になったか確認
+      if (!e.date) return e;
+      const entryDay = parseInt(e.date.split('-')[2]);
+      if (entryDay > todayDay) return e;
+
+      // 残高反映
+      const updated = { ...e, balanceApplied: true };
+      if (e.accountId) {
+        const acc = b.accounts.find(a => a.id === e.accountId);
+        if (acc) {
+          acc.balance += e.type === 'income' ? e.amount : -e.amount;
+          changed = true;
+        }
+      }
+      if (e.type !== 'income') updated.paid = true;
+      return updated;
+    });
+
+    // entries が変化した（balanceApplied が更新された）場合のみ保存
+    const original = getEntries(mode, year, month);
+    const hasChange = entries.some((e, i) => e.balanceApplied !== original[i]?.balanceApplied || e.paid !== original[i]?.paid);
+    if (hasChange) {
+      if (changed) saveBalance(b);
+      setEntries(mode, year, month, entries);
+    }
+  });
+}
+
 // テンプレートを今月まだ自動追加していなければ追加する
 function autoApplyTemplates() {
   const today = new Date();
   const todayDay = today.getDate();
   const appliedKey = 'cf-tpl-applied-v1';
   const applied = JSON.parse(localStorage.getItem(appliedKey) || '[]');
+
+  // 既に追加済みの繰り延べエントリで支払い日が来たものを反映
+  applyDeferredEntries();
 
   ['personal', 'business'].forEach(mode => {
     const { year, month } = state[mode];
