@@ -5446,8 +5446,9 @@ function renderCsvPreview() {
   const tbody = document.getElementById('csv-preview-body');
   const newRows = _csvRows.filter(r => !r.dup);
   const dupRows = _csvRows.filter(r => r.dup);
-  document.getElementById('csv-summary').textContent = `新規: ${newRows.length}件 / 重複スキップ: ${dupRows.length}件`;
-  document.getElementById('csv-register-count').textContent = newRows.filter(r=>!r.skip).length;
+  const dupForce = dupRows.filter(r => !r.skip).length;
+  document.getElementById('csv-summary').textContent = `新規: ${newRows.length}件 / 重複: ${dupRows.length}件${dupForce > 0 ? `（うち${dupForce}件を強制登録）` : '（チェックで強制登録可）'}`;
+  document.getElementById('csv-register-count').textContent = _csvRows.filter(r=>!r.skip).length;
 
   tbody.innerHTML = _csvRows.map((r,i) => {
     const typeOpts = [
@@ -5457,8 +5458,9 @@ function renderCsvPreview() {
     const modeOpts = [
       {v:'personal',l:'🏠 家計'},{v:'business',l:'💼 仕事'}
     ].map(o=>`<option value="${o.v}"${(r.mode||'personal')===o.v?' selected':''}>${o.l}</option>`).join('');
-    const skipCheck = r.dup ? '<span style="color:var(--text-muted);font-size:11px">重複</span>' :
-      `<input type="checkbox" ${r.skip?'':'checked'} onchange="toggleCsvSkip(${i},this.checked)" style="width:auto">`;
+    const skipCheck = r.dup
+      ? `<div style="text-align:center"><div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">重複</div><input type="checkbox" title="チェックで強制登録" ${r.skip?'':'checked'} onchange="toggleCsvSkip(${i},this.checked)" style="width:auto"></div>`
+      : `<input type="checkbox" ${r.skip?'':'checked'} onchange="toggleCsvSkip(${i},this.checked)" style="width:auto">`;
     return `<tr id="csv-row-${i}" class="${r.dup?'dup':''}">
       <td><select class="csv-mode-sel" onchange="setCsvMode(${i},this.value)" style="font-size:11px;width:80px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type==='transfer'?'disabled':''}>${modeOpts}</select></td>
       <td><select onchange="setCsvType(${i},this.value)" style="font-size:11px;width:90px;background:var(--win);color:var(--text);border:1px solid var(--border)">${typeOpts}</select></td>
@@ -5474,7 +5476,11 @@ function renderCsvPreview() {
 
 function toggleCsvSkip(i, checked) {
   _csvRows[i].skip = !checked;
-  document.getElementById('csv-register-count').textContent = _csvRows.filter(r=>!r.dup&&!r.skip).length;
+  const dupForce = _csvRows.filter(r=>r.dup&&!r.skip).length;
+  document.getElementById('csv-register-count').textContent = _csvRows.filter(r=>!r.skip).length;
+  const newRows = _csvRows.filter(r => !r.dup);
+  const dupRows = _csvRows.filter(r => r.dup);
+  document.getElementById('csv-summary').textContent = `新規: ${newRows.length}件 / 重複: ${dupRows.length}件${dupForce > 0 ? `（うち${dupForce}件を強制登録）` : '（チェックで強制登録可）'}`;
 }
 function setCsvType(i, v) {
   _csvRows[i].type = v;
@@ -5531,7 +5537,8 @@ function setCsvCardPay(i, v) {
 
 // ---- 登録処理 ----
 async function registerCsvEntries() {
-  const toReg = _csvRows.filter(r => !r.dup && !r.skip);
+  // skip=false なら重複行も強制登録対象に含める
+  const toReg = _csvRows.filter(r => !r.skip);
   if (!toReg.length) { document.getElementById('csv-register-msg').textContent = '登録する行がありません'; return; }
   const b = loadBalance();
   const today = new Date();
