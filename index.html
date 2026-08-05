@@ -5048,6 +5048,28 @@ async function runGeminiCategoryBatch(rows, apiKey) {
 }
 
 // ---- プレビュー描画 ----
+const INCOME_TYPES = ['給与','ボーナス','副業','利息・配当','その他収入'];
+
+function csvDetailCell(r, i) {
+  const sel = 'font-size:11px;background:var(--win);color:var(--text);border:1px solid var(--border)';
+  if (r.type === 'expense') {
+    const catOpts = IMPORT_CATS.map(c=>`<option${r.category===c?' selected':''}>${c}</option>`).join('');
+    return `<select class="csv-detail-sel" onchange="setCsvCat(${i},this.value)" style="${sel}">${catOpts}</select>`;
+  }
+  if (r.type === 'income') {
+    const incOpts = INCOME_TYPES.map(t=>`<option${(r.incomeType||'給与')===t?' selected':''}>${t}</option>`).join('');
+    return `<select class="csv-detail-sel" onchange="setCsvIncometype(${i},this.value)" style="${sel}">${incOpts}</select>`;
+  }
+  if (r.type === 'transfer') {
+    const b = loadBalance();
+    const accs = (b.accounts||[]).filter(a => a.id !== r.accountId);
+    const toOpts = `<option value="-1"${(r.transferToId||0)===-1?' selected':''}>財布（現金）</option>`
+      + accs.map(a=>`<option value="${a.id}"${r.transferToId===a.id?' selected':''}>${a.name}</option>`).join('');
+    return `<select class="csv-detail-sel" onchange="setCsvTransferTo(${i},this.value)" style="${sel}">${toOpts}</select>`;
+  }
+  return '';
+}
+
 function renderCsvPreview() {
   const tbody = document.getElementById('csv-preview-body');
   const newRows = _csvRows.filter(r => !r.dup);
@@ -5059,7 +5081,6 @@ function renderCsvPreview() {
     const typeOpts = [
       {v:'income',l:'📥 収入'},{v:'expense',l:'🛒 支出'},{v:'transfer',l:'🔄 資産移動'}
     ].map(o=>`<option value="${o.v}"${r.type===o.v?' selected':''}>${o.l}</option>`).join('');
-    const catOpts = IMPORT_CATS.map(c=>`<option${r.category===c?' selected':''}>${c}</option>`).join('');
     const skipCheck = r.dup ? '<span style="color:var(--text-muted);font-size:11px">重複</span>' :
       `<input type="checkbox" ${r.skip?'':'checked'} onchange="toggleCsvSkip(${i},this.checked)" style="width:auto">`;
     return `<tr id="csv-row-${i}" class="${r.dup?'dup':''}">
@@ -5067,7 +5088,7 @@ function renderCsvPreview() {
       <td style="white-space:nowrap">${r.date}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}</td>
       <td style="text-align:right;white-space:nowrap">${fmt(r.amount)}</td>
-      <td><select class="cat-sel" onchange="setCsvCat(${i},this.value)" style="font-size:11px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type!=='expense'?'disabled':''}>${catOpts}</select></td>
+      <td id="csv-detail-${i}">${csvDetailCell(r,i)}</td>
       <td style="text-align:center">${skipCheck}</td>
     </tr>`;
   }).join('');
@@ -5079,10 +5100,12 @@ function toggleCsvSkip(i, checked) {
 }
 function setCsvType(i, v) {
   _csvRows[i].type = v;
-  const row = document.getElementById(`csv-row-${i}`);
-  if (row) { const catSel = row.querySelector('.cat-sel'); if (catSel) catSel.disabled = (v !== 'expense'); }
+  const cell = document.getElementById(`csv-detail-${i}`);
+  if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
 }
 function setCsvCat(i, v) { _csvRows[i].category = v; }
+function setCsvIncometype(i, v) { _csvRows[i].incomeType = v; }
+function setCsvTransferTo(i, v) { _csvRows[i].transferToId = parseInt(v); }
 
 // ---- 登録処理 ----
 async function registerCsvEntries() {
@@ -5100,14 +5123,17 @@ async function registerCsvEntries() {
     const em0 = dateParts ? parseInt(dateParts[2]) - 1 : m; // 0-indexed
 
     if (r.type === 'transfer') {
-      // ATM出金: balance.transfers[] に追加して口座残高を減算
       const acc = b.accounts.find(a => a.id === r.accountId);
+      const toId = r.transferToId !== undefined ? r.transferToId : -1;
+      const toAcc = toId >= 0 ? (b.accounts||[]).find(a => a.id === toId) : null;
+      const toName = toAcc ? toAcc.name : '財布（現金）';
       if (acc) {
         acc.balance -= r.amount;
+        if (toAcc) toAcc.balance += r.amount;
         if (!b.transfers) b.transfers = [];
         b.transfers.unshift({ id: Date.now() + Math.random(), date: entryDate,
           fromId: r.accountId, fromName: r.accountName,
-          toId: -1, toName: '財布（現金）', amount: r.amount });
+          toId, toName, amount: r.amount });
       }
     } else {
       // expense / income → entries に追加
@@ -5117,7 +5143,7 @@ async function registerCsvEntries() {
         name: r.description,
         amount: r.amount,
         type: r.type,
-        cat: r.type === 'expense' ? r.category : '収入',
+        cat: r.type === 'expense' ? r.category : (r.incomeType || '給与'),
         date: entryDate,
       };
       if (r.isCard) {
