@@ -908,7 +908,7 @@ select option { background: #0d0d35; }
 
     <div class="card" style="border-color:var(--green)">
       <div class="card-title" style="color:var(--green)">📥 CSVインポート（銀行・クレカ）</div>
-      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">三菱UFJ・楽天・住信SBI・セゾン・JCBのCSVを読み込んで収支を自動登録します。カテゴリはGemini AIで自動判定。</p>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">三菱UFJ・ドコモSMTBネット銀行・セゾン・JCBのCSVを読み込んで収支を自動登録します。カテゴリはGemini AIで自動判定。</p>
       <div style="margin-bottom:12px">
         <details>
           <summary style="font-size:11px;color:var(--text-hint);cursor:pointer;user-select:none">⚙ Gemini APIキー設定（カテゴリ自動分類）</summary>
@@ -1152,8 +1152,7 @@ select option { background: #0d0d35; }
           <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">① 読み込む種別を選択してください</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
             <button class="csv-btn" onclick="selectCsvBank('mufg')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">🏦</span><span>三菱UFJ銀行</span></button>
-            <button class="csv-btn" onclick="selectCsvBank('rakuten')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">🏦</span><span>楽天銀行</span></button>
-            <button class="csv-btn" onclick="selectCsvBank('sbi')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">🏦</span><span>住信SBI銀行</span></button>
+            <button class="csv-btn" onclick="selectCsvBank('sbi')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">🏦</span><span>ドコモSMTB<br>ネット銀行</span></button>
             <button class="csv-btn" onclick="selectCsvBank('saison')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">💳</span><span>セゾンカード</span></button>
             <button class="csv-btn" onclick="selectCsvBank('jcb')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">💳</span><span>JCB</span></button>
           </div>
