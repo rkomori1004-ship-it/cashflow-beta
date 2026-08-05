@@ -4886,15 +4886,15 @@ function parseDate(str) {
 function toNum(s) { return parseFloat((s||'').replace(/,/g,'').trim()) || 0; }
 
 function parseMUFG(lines) {
-  // ヘッダー行を「取引日」or「年月日」or「日付」が含まれる行まで読み飛ばし、列順を判定
   let start = 1;
-  let outCol = 2, incCol = 3, descCol = 1, balCol = 4;
+  let outCol = 2, incCol = 3, descCol = 1, balCol = -1;
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     if (l.includes('取引日') || l.includes('年月日') || l.includes('日付')) {
       start = i + 1;
       const cols = csvSplit(l);
-      if (cols.length >= 5) { outCol = 3; incCol = 4; descCol = 2; balCol = 5; }
+      if (cols.length >= 5) { outCol = 3; incCol = 4; descCol = 2; }
+      balCol = cols.findIndex(c => c.includes('残高'));
       break;
     }
   }
@@ -4909,28 +4909,34 @@ function parseMUFG(lines) {
     const amount = out > 0 ? out : inc;
     const row = detectType(out > 0 ? 'out' : 'in', desc, amount);
     row.date = date; row.description = desc; row.amount = amount;
-    const bal = toNum(cols[balCol]); if (bal) row.balance = bal;
+    if (balCol >= 0) { const bal = toNum(cols[balCol]); if (bal) row.balance = bal; }
     rows.push(row);
   }
   return rows;
 }
 
 function parseRakuten(lines) {
-  // ヘッダー行を「取引日」が含まれる行まで読み飛ばし
   let start = 0;
-  for (let i = 0; i < lines.length; i++) { if (lines[i].includes('取引日')) { start = i + 1; break; } }
+  let balCol = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('取引日')) {
+      const header = csvSplit(lines[i]);
+      balCol = header.findIndex(c => c.includes('残高'));
+      start = i + 1; break;
+    }
+  }
   const rows = [];
   for (let i = start; i < lines.length; i++) {
     const cols = csvSplit(lines[i]);
     if (cols.length < 4) continue;
     const date = parseDate(cols[0]); if (!date.match(/^\d{4}-/)) continue;
-    const amtRaw = toNum(cols[1]); // 入出金（正=入金、負=出金）
+    const amtRaw = toNum(cols[1]);
     const desc = cols[3] || '';
     if (amtRaw === 0) continue;
     const amount = Math.abs(amtRaw);
     const row = detectType(amtRaw < 0 ? 'out' : 'in', desc, amount);
     row.date = date; row.description = desc; row.amount = amount;
-    const bal = toNum(cols[2]); if (bal) row.balance = bal;
+    if (balCol >= 0) { const bal = toNum(cols[balCol]); if (bal) row.balance = bal; }
     rows.push(row);
   }
   return rows;
@@ -4938,6 +4944,8 @@ function parseRakuten(lines) {
 
 function parseSBI(lines) {
   // 列順: 日付, 内容, 出金額(円), 入金額(円), 残高(円)
+  const header = csvSplit(lines[0] || '');
+  const balCol = header.findIndex(c => c.includes('残高'));
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = csvSplit(lines[i]);
@@ -4949,7 +4957,7 @@ function parseSBI(lines) {
     const amount = out > 0 ? out : inc;
     const row = detectType(out > 0 ? 'out' : 'in', desc, amount);
     row.date = date; row.description = desc; row.amount = amount;
-    const bal = toNum(cols[4]); if (bal) row.balance = bal;
+    if (balCol >= 0) { const bal = toNum(cols[balCol]); if (bal) row.balance = bal; }
     rows.push(row);
   }
   return rows;
