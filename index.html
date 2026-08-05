@@ -1181,7 +1181,7 @@ select option { background: #0d0d35; }
           <div id="csv-summary" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
           <div style="overflow-x:auto;max-height:360px;overflow-y:auto">
             <table class="csv-preview-table">
-              <thead><tr><th>種別</th><th>日付</th><th>摘要</th><th>金額</th><th>カテゴリ</th><th>登録先</th><th>スキップ</th></tr></thead>
+              <thead><tr><th>種別</th><th>日付</th><th>摘要</th><th>金額</th><th>差引残高</th><th>カテゴリ</th><th>登録先</th><th>スキップ</th></tr></thead>
               <tbody id="csv-preview-body"></tbody>
             </table>
           </div>
@@ -4888,14 +4888,13 @@ function toNum(s) { return parseFloat((s||'').replace(/,/g,'').trim()) || 0; }
 function parseMUFG(lines) {
   // ヘッダー行を「取引日」or「年月日」or「日付」が含まれる行まで読み飛ばし、列順を判定
   let start = 1;
-  let outCol = 2, incCol = 3, descCol = 1; // デフォルト: 日付,摘要,出金,入金
+  let outCol = 2, incCol = 3, descCol = 1, balCol = 4;
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     if (l.includes('取引日') || l.includes('年月日') || l.includes('日付')) {
       start = i + 1;
-      // 9列フォーマット（日付,取引,取引内容,出金,入金,...）かどうかを列数で判定
       const cols = csvSplit(l);
-      if (cols.length >= 5) { outCol = 3; incCol = 4; descCol = 2; }
+      if (cols.length >= 5) { outCol = 3; incCol = 4; descCol = 2; balCol = 5; }
       break;
     }
   }
@@ -4910,6 +4909,7 @@ function parseMUFG(lines) {
     const amount = out > 0 ? out : inc;
     const row = detectType(out > 0 ? 'out' : 'in', desc, amount);
     row.date = date; row.description = desc; row.amount = amount;
+    const bal = toNum(cols[balCol]); if (bal) row.balance = bal;
     rows.push(row);
   }
   return rows;
@@ -4930,6 +4930,7 @@ function parseRakuten(lines) {
     const amount = Math.abs(amtRaw);
     const row = detectType(amtRaw < 0 ? 'out' : 'in', desc, amount);
     row.date = date; row.description = desc; row.amount = amount;
+    const bal = toNum(cols[2]); if (bal) row.balance = bal;
     rows.push(row);
   }
   return rows;
@@ -4948,6 +4949,7 @@ function parseSBI(lines) {
     const amount = out > 0 ? out : inc;
     const row = detectType(out > 0 ? 'out' : 'in', desc, amount);
     row.date = date; row.description = desc; row.amount = amount;
+    const bal = toNum(cols[4]); if (bal) row.balance = bal;
     rows.push(row);
   }
   return rows;
@@ -5099,7 +5101,8 @@ function renderCsvPreview() {
       <td><select onchange="setCsvType(${i},this.value)" style="font-size:11px;width:90px;background:var(--win);color:var(--text);border:1px solid var(--border)">${typeOpts}</select></td>
       <td style="white-space:nowrap">${r.date}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}</td>
-      <td style="text-align:right;white-space:nowrap">${fmt(r.amount)}</td>
+      <td style="text-align:right;white-space:nowrap;color:${r._dir==='in'?'var(--green)':'var(--red)'}">${r._dir==='in'?'+':'-'}${fmt(r.amount)}</td>
+      <td style="text-align:right;white-space:nowrap;color:var(--text-muted)">${r.balance!=null?fmt(r.balance):'—'}</td>
       <td id="csv-detail-${i}">${csvDetailCell(r,i)}</td>
       <td><select onchange="setCsvMode(${i},this.value)" style="font-size:11px;width:80px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type==='transfer'?'disabled':''}>${modeOpts}</select></td>
       <td style="text-align:center">${skipCheck}</td>
