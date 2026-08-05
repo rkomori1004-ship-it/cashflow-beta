@@ -5071,13 +5071,25 @@ async function parseCsvFile() {
     }
   }
 
-  // ローン名との照合（出金のみ）
+  // ローン名との照合（出金のみ）→ type を loan_repay に
   const bForLoan = loadBalance();
   if ((bForLoan.loans||[]).length) {
     for (const r of rows) {
       if (r.dup || r._dir !== 'out') continue;
       const matched = (bForLoan.loans||[]).find(l => r.description.includes(l.name));
-      if (matched) { r._loanId = matched.id; r._loanName = matched.name; r._isLoanRepayment = true; }
+      if (matched) { r._loanId = matched.id; r._loanName = matched.name; r._isLoanRepayment = true; r.type = 'loan_repay'; }
+    }
+  }
+
+  // カード引落の自動検出（出金・銀行CSV）→ type を card_payment に
+  const CARD_PAYMENT_KEYWORDS = ['カード引落','クレジット引落','ｸﾚｼﾞｯﾄ','ＶＩＳＡｶｰﾄﾞ','VISA引落','カード代金','カードﾘｮｷﾝ','ｸﾚｼﾞｯﾄｶｰﾄﾞ','カード口座振替'];
+  const bForCard = bForLoan; // same loaded object
+  for (const r of rows) {
+    if (r.dup || r._dir !== 'out' || r._isLoanRepayment || r._isFactoring || r.type === 'transfer') continue;
+    if (CARD_PAYMENT_KEYWORDS.some(k => r.description.includes(k))) {
+      r.type = 'card_payment';
+      // カードが1枚しかなければ自動選択
+      if ((bForCard.cards||[]).length === 1) { r._cardPayId = bForCard.cards[0].id; r._cardPayName = bForCard.cards[0].name; }
     }
   }
 
@@ -5233,6 +5245,7 @@ const TYPE_KEYWORDS = {
   income: ['給与','賞与','報酬','振込入金','振替入金','他行振込入金','利息','利子','給料'],
   expense_send: ['振込','送金','振替出金'],
   expense: ['口座振替','自動引落','手数料'],
+  card_payment: ['カード引落','クレジット引落','ｸﾚｼﾞｯﾄ','カード代金','カード口座振替'],
 };
 
 function detectType(dir, desc, amount) {
@@ -5320,6 +5333,24 @@ function csvDetailCell(r, i) {
       <select class="csv-detail-sel" onchange="setCsvTransferTo(${i},this.value)" style="${sel}">${counterOpts}</select>
     </div>`;
   }
+  if (r.type === 'loan_repay') {
+    const b = loadBalance();
+    const loans = b.loans || [];
+    if (!loans.length) return '<span style="font-size:11px;color:var(--red)">ローンなし</span>';
+    const loanOpts = loans.map(l=>`<option value="${l.id}"${r._loanId===l.id?' selected':''}>${l.name}（残${fmt(l.balance)}）</option>`).join('');
+    return `<select class="csv-detail-sel" onchange="setCsvLoan(${i},this.value)" style="${sel}">${loanOpts}</select>`;
+  }
+  if (r.type === 'loan_borrow') {
+    const nameVal = r._loanBorrowName || '';
+    return `<input type="text" value="${nameVal}" placeholder="借入名（例：カードローン）" onchange="setCsvLoanName(${i},this.value)" style="${sel};width:140px;padding:2px 4px">`;
+  }
+  if (r.type === 'card_payment') {
+    const b = loadBalance();
+    const cards = b.cards || [];
+    if (!cards.length) return '<span style="font-size:11px;color:var(--text-muted)">カードなし</span>';
+    const cardOpts = `<option value="">— 選択 —</option>` + cards.map(c=>`<option value="${c.id}"${r._cardPayId===c.id?' selected':''}>${c.name}</option>`).join('');
+    return `<select class="csv-detail-sel" onchange="setCsvCardPay(${i},this.value)" style="${sel}">${cardOpts}</select>`;
+  }
   return '';
 }
 
@@ -5332,7 +5363,8 @@ function renderCsvPreview() {
 
   tbody.innerHTML = _csvRows.map((r,i) => {
     const typeOpts = [
-      {v:'income',l:'📥 収入'},{v:'expense',l:'🛒 支出'},{v:'transfer',l:'🔄 資産移動'}
+      {v:'income',l:'📥 収入'},{v:'expense',l:'🛒 支出'},{v:'transfer',l:'🔄 資産移動'},
+      {v:'loan_repay',l:'💳 ローン返済'},{v:'loan_borrow',l:'🏦 借入'},{v:'card_payment',l:'💴 カード引落'}
     ].map(o=>`<option value="${o.v}"${r.type===o.v?' selected':''}>${o.l}</option>`).join('');
     const modeOpts = [
       {v:'personal',l:'🏠 家計'},{v:'business',l:'💼 仕事'}
@@ -5358,20 +5390,23 @@ function toggleCsvSkip(i, checked) {
 }
 function setCsvType(i, v) {
   _csvRows[i].type = v;
-  if (v === 'income') _csvRows[i]._dir = 'in';
-  else if (v === 'expense') _csvRows[i]._dir = 'out';
+  if (v === 'income') { _csvRows[i]._dir = 'in'; _csvRows[i]._isLoanRepayment = false; }
+  else if (v === 'expense') { _csvRows[i]._dir = 'out'; _csvRows[i]._isLoanRepayment = false; }
+  else if (v === 'loan_repay') { _csvRows[i]._dir = 'out'; _csvRows[i]._isLoanRepayment = true; }
+  else if (v === 'loan_borrow') { _csvRows[i]._dir = 'in'; }
+  else if (v === 'card_payment') { _csvRows[i]._dir = 'out'; }
   const cell = document.getElementById(`csv-detail-${i}`);
   if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
   const row = document.getElementById(`csv-row-${i}`);
   if (row) {
-    const amtCell = row.cells[3];
+    const amtCell = row.cells[4];
     if (amtCell) {
-      const isIn = v === 'income' || (v === 'transfer' && _csvRows[i]._dir === 'in');
+      const isIn = v === 'income' || v === 'loan_borrow' || (v === 'transfer' && _csvRows[i]._dir === 'in');
       amtCell.style.color = isIn ? 'var(--green)' : 'var(--red)';
       amtCell.textContent = (isIn ? '+' : '-') + fmt(_csvRows[i].amount);
     }
     const modeSel = row.querySelector('.csv-mode-sel');
-    if (modeSel) modeSel.disabled = (v === 'transfer');
+    if (modeSel) modeSel.disabled = (v === 'transfer' || v === 'loan_repay' || v === 'loan_borrow' || v === 'card_payment');
   }
 }
 function setCsvCat(i, v) { _csvRows[i].category = v; }
@@ -5391,6 +5426,19 @@ function setCsvMode(i, v) {
   }
   const cell = document.getElementById(`csv-detail-${i}`);
   if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
+}
+function setCsvLoan(i, v) {
+  const b = loadBalance();
+  const loan = (b.loans||[]).find(l => l.id === parseInt(v));
+  if (loan) { _csvRows[i]._loanId = loan.id; _csvRows[i]._loanName = loan.name; }
+}
+function setCsvLoanName(i, v) { _csvRows[i]._loanBorrowName = v.trim(); }
+function setCsvCardPay(i, v) {
+  const id = parseInt(v);
+  const b = loadBalance();
+  const card = (b.cards||[]).find(c => c.id === id);
+  _csvRows[i]._cardPayId = card ? card.id : null;
+  _csvRows[i]._cardPayName = card ? card.name : '';
 }
 
 // ---- 登録処理 ----
@@ -5480,19 +5528,41 @@ async function registerCsvEntries() {
           saveFactoringCases(fcCases);
         }
       }
-    } else if (r._isLoanRepayment) {
-      // ローン返済：残高を減算して家計支出に追加
+    } else if (r.type === 'loan_repay' || r._isLoanRepayment) {
+      // ローン返済：ローン残高を減算、口座残高を減算、家計支出に追加
       const loan = (b.loans||[]).find(l => l.id === r._loanId);
       if (loan) loan.balance = Math.max(0, loan.balance - r.amount);
       const acc = b.accounts.find(a => a.id === r.accountId);
       if (acc) acc.balance -= r.amount;
+      const loanLabel = r._loanName || (loan ? loan.name : 'ローン');
       const entries = getEntries('personal', ey, em0);
       entries.unshift({ id: Date.now() + Math.random(), date: entryDate,
-        name: `${r._loanName} 返済`, amount: r.amount,
+        name: `${loanLabel} 返済`, amount: r.amount,
         type: 'expense', cat: 'ローン・借金',
         accountId: r.accountId, accountName: r.accountName,
         paid: true, balanceApplied: true, loanId: r._loanId });
       setEntries('personal', ey, em0, entries);
+    } else if (r.type === 'loan_borrow') {
+      // 借入：ローン残高を新規追加or増加、口座残高を増加
+      const loanName = r._loanBorrowName || r.description;
+      const existingLoan = (b.loans||[]).find(l => l.name === loanName);
+      if (existingLoan) {
+        existingLoan.balance += r.amount;
+      } else {
+        if (!b.loans) b.loans = [];
+        b.loans.push({ id: Date.now() + Math.random(), name: loanName, balance: r.amount });
+      }
+      const acc = b.accounts.find(a => a.id === r.accountId);
+      if (acc) acc.balance += r.amount;
+    } else if (r.type === 'card_payment') {
+      // カード引落：口座残高を減算のみ（カード支出は既に計上済みのため支出に追加しない）
+      const acc = b.accounts.find(a => a.id === r.accountId);
+      if (acc) acc.balance -= r.amount;
+      // カード残高をリセット（引落済み）
+      if (r._cardPayId) {
+        const card = (b.cards||[]).find(c => c.id === r._cardPayId);
+        if (card) card.balance = Math.max(0, card.balance - r.amount);
+      }
     } else {
       // expense / income → entries に追加
       const mode = r.mode || 'personal';
