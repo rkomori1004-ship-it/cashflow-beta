@@ -5000,7 +5000,7 @@ function detectType(dir, desc, amount) {
   const d = desc.toUpperCase();
   // ATM
   if (TYPE_KEYWORDS.transfer.some(k => desc.includes(k))) {
-    return { type: 'transfer', category: '', typeIcon: '🔄', _needsGemini: false };
+    return { type: 'transfer', category: '', typeIcon: '🔄', _needsGemini: false, _dir: dir };
   }
   if (dir === 'in') {
     if (TYPE_KEYWORDS.income.some(k => desc.includes(k))) {
@@ -5062,10 +5062,19 @@ function csvDetailCell(r, i) {
   }
   if (r.type === 'transfer') {
     const b = loadBalance();
+    const isIn = r._dir === 'in';
+    const dirOpts = [
+      {v:'out',l:'📤 出金'},{v:'in',l:'📥 入金'}
+    ].map(o=>`<option value="${o.v}"${(r._dir||'out')===o.v?' selected':''}>${o.l}</option>`).join('');
     const accs = (b.accounts||[]).filter(a => a.id !== r.accountId);
-    const toOpts = `<option value="-1"${(r.transferToId||0)===-1?' selected':''}>財布（現金）</option>`
+    const counterOpts = `<option value="-1"${(r.transferToId==null||r.transferToId===-1)?' selected':''}>財布（現金）</option>`
       + accs.map(a=>`<option value="${a.id}"${r.transferToId===a.id?' selected':''}>${a.name}</option>`).join('');
-    return `<select class="csv-detail-sel" onchange="setCsvTransferTo(${i},this.value)" style="${sel}">${toOpts}</select>`;
+    const counterLabel = isIn ? '送金元' : '移動先';
+    return `<div style="display:flex;gap:4px;align-items:center">
+      <select onchange="setCsvDir(${i},this.value)" style="${sel}">${dirOpts}</select>
+      <span style="font-size:10px;color:var(--text-muted)">${counterLabel}</span>
+      <select class="csv-detail-sel" onchange="setCsvTransferTo(${i},this.value)" style="${sel}">${counterOpts}</select>
+    </div>`;
   }
   return '';
 }
@@ -5115,6 +5124,11 @@ function setCsvType(i, v) {
 function setCsvCat(i, v) { _csvRows[i].category = v; }
 function setCsvIncometype(i, v) { _csvRows[i].incomeType = v; }
 function setCsvTransferTo(i, v) { _csvRows[i].transferToId = parseInt(v); }
+function setCsvDir(i, v) {
+  _csvRows[i]._dir = v;
+  const cell = document.getElementById(`csv-detail-${i}`);
+  if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
+}
 function setCsvMode(i, v) { _csvRows[i].mode = v; }
 
 // ---- 登録処理 ----
@@ -5133,23 +5147,28 @@ async function registerCsvEntries() {
     const em0 = dateParts ? parseInt(dateParts[2]) - 1 : m; // 0-indexed
 
     if (r.type === 'transfer') {
-      const acc = b.accounts.find(a => a.id === r.accountId);
-      const toId = r.transferToId !== undefined ? r.transferToId : -1;
-      const toAcc = toId >= 0 ? (b.accounts||[]).find(a => a.id === toId) : null;
-      const toName = toAcc ? toAcc.name : '財布（現金）';
-      // 同日・同額・同口座間の逆方向登録（入金側CSVの重複）をスキップ
+      const isIn = r._dir === 'in';
+      const counterId = r.transferToId !== undefined ? r.transferToId : -1;
+      const counterAcc = counterId >= 0 ? (b.accounts||[]).find(a => a.id === counterId) : null;
+      const counterName = counterAcc ? counterAcc.name : '財布（現金）';
+      const fromId = isIn ? counterId : r.accountId;
+      const fromName = isIn ? counterName : r.accountName;
+      const toId = isIn ? r.accountId : counterId;
+      const toName = isIn ? r.accountName : counterName;
+      const fromAcc = isIn ? counterAcc : b.accounts.find(a => a.id === r.accountId);
+      const toAcc = isIn ? b.accounts.find(a => a.id === r.accountId) : counterAcc;
+      // 同日・同額・同口座間の逆方向登録（片側CSVの重複）をスキップ
       const alreadyExists = (b.transfers||[]).some(t =>
         t.date === entryDate && t.amount === r.amount &&
-        ((t.fromId === r.accountId && t.toId === toId) ||
-         (t.fromId === toId && t.toId === r.accountId))
+        ((t.fromId === fromId && t.toId === toId) ||
+         (t.fromId === toId && t.toId === fromId))
       );
-      if (acc && !alreadyExists) {
-        acc.balance -= r.amount;
+      if (!alreadyExists) {
+        if (fromAcc) fromAcc.balance -= r.amount;
         if (toAcc) toAcc.balance += r.amount;
         if (!b.transfers) b.transfers = [];
         b.transfers.unshift({ id: Date.now() + Math.random(), date: entryDate,
-          fromId: r.accountId, fromName: r.accountName,
-          toId, toName, amount: r.amount });
+          fromId, fromName, toId, toName, amount: r.amount });
       }
     } else {
       // expense / income → entries に追加
