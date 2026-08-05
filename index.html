@@ -4852,11 +4852,11 @@ async function parseCsvFile() {
     }
   }
 
-  // ファクタリング会社名との照合
+  // ファクタリング会社名との照合（入金・出金どちらも）
   const fcCompanies = loadFactoringCompanies();
   if (fcCompanies.length) {
     for (const r of rows) {
-      if (r.dup || r.type !== 'income') continue;
+      if (r.dup) continue;
       const matched = fcCompanies.find(c => r.description.includes(c.name));
       if (matched) { r._factoringCompany = matched.name; r._isFactoring = true; }
     }
@@ -5199,6 +5199,54 @@ async function registerCsvEntries() {
         b.transfers.unshift({ id: Date.now() + Math.random(), date: entryDate,
           fromId, fromName, toId, toName, amount: r.amount });
       }
+    } else if (r._isFactoring) {
+      // ファクタリング自動処理
+      const fcCases = loadFactoringCases();
+      if (r.type === 'income') {
+        // 入金：同社・waiting・金額近似の案件を received に
+        const matched = fcCases.find(c =>
+          c.companyName === r._factoringCompany &&
+          c.status === 'waiting' &&
+          Math.abs(c.receiveAmount - r.amount) / Math.max(c.receiveAmount, 1) < 0.02
+        );
+        if (matched) {
+          matched.status = 'received';
+          matched.actualReceiveDate = entryDate;
+          // 口座残高加算（CSVの口座を優先）
+          const acc = b.accounts.find(a => a.id === r.accountId);
+          if (acc) acc.balance += r.amount;
+          // 仕事売上に追加
+          const bizEntries = getEntries('business', ey, em0);
+          bizEntries.unshift({ id: Date.now() + Math.random(), date: entryDate,
+            name: `ファクタリング入金（${r._factoringCompany}）`,
+            amount: r.amount, type: 'income', cat: 'その他売上',
+            accountId: r.accountId, accountName: r.accountName,
+            paid: true, balanceApplied: true, factoringCaseId: matched.id });
+          setEntries('business', ey, em0, bizEntries);
+          saveFactoringCases(fcCases);
+        }
+      } else if (r.type === 'expense') {
+        // 出金（返済）：同社・received の案件を repaid に
+        const matched = fcCases.find(c =>
+          c.companyName === r._factoringCompany && c.status === 'received'
+        );
+        if (matched) {
+          matched.status = 'repaid';
+          matched.actualRepayDate = entryDate;
+          // 口座残高減算
+          const acc = b.accounts.find(a => a.id === r.accountId);
+          if (acc) acc.balance -= r.amount;
+          // 仕事経費に追加
+          const bizEntries = getEntries('business', ey, em0);
+          bizEntries.unshift({ id: Date.now() + Math.random(), date: entryDate,
+            name: `ファクタリング返済（${r._factoringCompany}）`,
+            amount: r.amount, type: 'expense', cat: '仕事の経費',
+            accountId: r.accountId, accountName: r.accountName,
+            paid: true, balanceApplied: true, factoringCaseId: matched.id });
+          setEntries('business', ey, em0, bizEntries);
+          saveFactoringCases(fcCases);
+        }
+      }
     } else {
       // expense / income → entries に追加
       const mode = r.mode || 'personal';
@@ -5225,7 +5273,7 @@ async function registerCsvEntries() {
         if (acc) { acc.balance += r.type === 'income' ? r.amount : -r.amount; }
       }
       entries.unshift(entry);
-      setEntries('personal', ey, em0, entries);
+      setEntries(mode, ey, em0, entries);
     }
   }
 
