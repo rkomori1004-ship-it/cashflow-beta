@@ -1043,7 +1043,13 @@ select option { background: #0d0d35; }
         <div class="field"><label>支出上限（円）</label><input id="budget-exp" type="number" placeholder="200000"></div>
         <div class="field"><label>フリーランス売上目標（円）</label><input id="budget-biz-inc" type="number" placeholder="300000"></div>
         <div class="field"><label>フリーランス経費上限（円）</label><input id="budget-biz-exp" type="number" placeholder="50000"></div>
-        <div class="field" style="grid-column:span 2"><label>💰 今月の貯金目標（円）</label><input id="savings-goal-input" type="number" placeholder="50000" style="border-color:var(--gold)"></div>
+        <div class="field" style="grid-column:span 2">
+          <label>💰 今月の貯金目標（円）</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="savings-goal-input" type="number" placeholder="50000" style="border-color:var(--gold);flex:1">
+            <button class="csv-btn" onclick="suggestSavingsGoal()" style="border-color:var(--gold);color:var(--gold);white-space:nowrap;padding:6px 10px;font-size:11px">先月から提案</button>
+          </div>
+        </div>
       </div>
       <button class="csv-btn" onclick="saveBudgetAndGoal()" style="border-color:var(--accent);color:var(--accent);background:var(--accent-bg)">保存する</button>
     </div>
@@ -3088,6 +3094,49 @@ function saveBudget() {
   renderBudget();
 }
 
+// ---- 貯金目標提案 ----
+function suggestSavingsGoal() {
+  const today = new Date();
+  let y = today.getFullYear(), m = today.getMonth() - 1; // 0-indexed 先月
+  if (m < 0) { m = 11; y--; }
+
+  const entries = getEntries('personal', y, m);
+  const inc = entries.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+  const exp = entries.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
+  const saved = inc - exp;
+
+  const raw = Math.max(saved, 0) * 1.1;
+  const suggested = Math.ceil(raw / 1000) * 1000; // 1,000円単位切り上げ
+
+  const monthLabel = `${y}年${m + 1}月`;
+  const savedColor = saved >= 0 ? 'var(--green)' : 'var(--red)';
+
+  document.getElementById('savings-suggest-body').innerHTML = `
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">${monthLabel}の収入合計</span><strong>¥${inc.toLocaleString('ja-JP')}</strong></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">${monthLabel}の支出合計</span><strong>¥${exp.toLocaleString('ja-JP')}</strong></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--text-muted)">先月の実貯金額</span><strong style="color:${savedColor}">¥${saved.toLocaleString('ja-JP')}</strong></div>
+    <div style="border-top:2px solid var(--gold);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;align-items:center">
+      <span style="color:var(--gold)">提案金額（10%増し・千円切上）</span>
+      <strong style="font-family:'Press Start 2P',monospace;font-size:15px;color:var(--gold)">¥${suggested.toLocaleString('ja-JP')}</strong>
+    </div>
+  `;
+
+  document.getElementById('savings-suggest-apply').onclick = () => {
+    document.getElementById('savings-goal-input').value = suggested;
+    const g = loadSavingsGoal();
+    g.monthlyGoal = suggested;
+    saveSavingsGoal(g);
+    renderTodaySpendable();
+    closeSavingsSuggest();
+  };
+
+  document.getElementById('savings-suggest-modal').style.display = 'flex';
+}
+
+function closeSavingsSuggest() {
+  document.getElementById('savings-suggest-modal').style.display = 'none';
+}
+
 // ---- 貯金目標（今日使える額ベース） ----
 function loadSavingsGoal() { try { return JSON.parse(localStorage.getItem('cf-savings-goal-v1')) || {}; } catch(e) { return {}; } }
 function saveSavingsGoal(g) { localStorage.setItem('cf-savings-goal-v1', JSON.stringify(g)); }
@@ -5090,6 +5139,18 @@ if (document.readyState === 'loading') {
   initCsvImport();
 }
 </script>
+
+<!-- 貯金目標提案ポップアップ -->
+<div id="savings-suggest-modal" onclick="if(event.target===this)closeSavingsSuggest()" style="display:none;position:fixed;inset:0;z-index:2100;background:rgba(0,0,0,0.85);align-items:center;justify-content:center">
+  <div style="background:#0d0d35;border:3px solid var(--gold);width:min(420px,92vw);padding:20px;box-shadow:8px 8px 0 #000">
+    <div style="color:var(--gold);font-size:14px;border-bottom:2px solid var(--gold);padding-bottom:8px;margin-bottom:16px">💰 先月の実績から提案</div>
+    <div id="savings-suggest-body" style="font-size:13px;line-height:2.2;margin-bottom:16px"></div>
+    <div style="display:flex;gap:10px">
+      <button id="savings-suggest-apply" class="add-btn green" style="flex:1;height:auto;padding:10px;font-size:12px">この金額を設定する</button>
+      <button onclick="closeSavingsSuggest()" class="add-btn" style="flex:1;height:auto;padding:10px;font-size:12px;background:var(--win);border-color:var(--border);color:var(--text-muted)">自分で入力する</button>
+    </div>
+  </div>
+</div>
 
 <!-- ファクタリング案件登録モーダル -->
 <div id="fc-case-modal" onclick="if(event.target===this)closeFactoringCaseModal()">
