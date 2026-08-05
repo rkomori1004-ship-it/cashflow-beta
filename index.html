@@ -5089,6 +5089,7 @@ async function runGeminiCategoryBatch(rows, apiKey) {
 
 // ---- プレビュー描画 ----
 const INCOME_TYPES = ['給与','ボーナス','副業','利息・配当','その他収入'];
+const BIZ_INCOME_TYPES = ['売上','報酬・業務委託','受取利息','その他売上'];
 
 function csvDetailCell(r, i) {
   const sel = 'font-size:11px;background:var(--win);color:var(--text);border:1px solid var(--border)';
@@ -5098,7 +5099,10 @@ function csvDetailCell(r, i) {
     return `<select class="csv-detail-sel" onchange="setCsvCat(${i},this.value)" style="${sel}">${catOpts}</select>`;
   }
   if (r.type === 'income') {
-    const incOpts = INCOME_TYPES.map(t=>`<option${(r.incomeType||'給与')===t?' selected':''}>${t}</option>`).join('');
+    const isBiz = (r.mode||'personal') === 'business';
+    const types = isBiz ? BIZ_INCOME_TYPES : INCOME_TYPES;
+    const def = isBiz ? '売上' : '給与';
+    const incOpts = types.map(t=>`<option${(r.incomeType||def)===t?' selected':''}>${t}</option>`).join('');
     return `<select class="csv-detail-sel" onchange="setCsvIncometype(${i},this.value)" style="${sel}">${incOpts}</select>`;
   }
   if (r.type === 'transfer') {
@@ -5183,9 +5187,11 @@ function setCsvMode(i, v) {
   _csvRows[i].mode = v;
   if (_csvRows[i].type === 'expense') {
     _csvRows[i].category = v === 'business' ? 'その他経費' : 'その他';
-    const cell = document.getElementById(`csv-detail-${i}`);
-    if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
+  } else if (_csvRows[i].type === 'income') {
+    _csvRows[i].incomeType = v === 'business' ? '売上' : '給与';
   }
+  const cell = document.getElementById(`csv-detail-${i}`);
+  if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
 }
 
 // ---- 登録処理 ----
