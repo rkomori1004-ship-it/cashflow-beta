@@ -808,7 +808,7 @@ select option { background: #0d0d35; }
         <div class="field"><label>金額（円）</label><input id="unpaid-amount" type="number" placeholder="50000"></div>
         <div class="field"><label>種類</label>
           <select id="unpaid-cat" onchange="updateUnpaidLinkSelect()">
-            <option>クレジットカード</option><option>ローン・借金</option><option>公共料金</option><option>その他</option>
+            <option>クレジットカード</option><option>ローン・借金</option><option>公共料金</option><option>税金</option><option>その他</option>
           </select>
         </div>
         <div class="field" id="unpaid-link-wrap" style="display:none"><label id="unpaid-link-label">カード</label>
@@ -1638,7 +1638,7 @@ function markUnpaidDone(id) {
   saveUnpaid(list.filter(u => u.id !== id));
 
   // 家計に支出記録として追加する（今日の日付で）
-  const catIcon = { 'クレジットカード':'💳', 'ローン・借金':'📋', '公共料金':'💡', 'その他':'📝' };
+  const catIcon = { 'クレジットカード':'💳', 'ローン・借金':'📋', '公共料金':'💡', '税金':'🏛️', 'その他':'📝' };
   const newEntry = {
     id: Date.now() + 1,
     date: getTodayKey(),
@@ -1746,7 +1746,7 @@ function renderUnpaidList() {
   const totalEl = document.getElementById('unpaid-total');
   if (!listEl) return;
 
-  const catIcon = { 'クレジットカード':'💳', 'ローン・借金':'📋', '公共料金':'💡', 'その他':'📝', '家計の支出':'🏠', '仕事の経費':'💼' };
+  const catIcon = { 'クレジットカード':'💳', 'ローン・借金':'📋', '公共料金':'💡', '税金':'🏛️', 'その他':'📝', '家計の支出':'🏠', '仕事の経費':'💼' };
 
   listEl.innerHTML = list.length ? list.map(u => `
     <div class="entry">
