@@ -4863,6 +4863,16 @@ async function parseCsvFile() {
     }
   }
 
+  // ローン名との照合（出金のみ）
+  const bForLoan = loadBalance();
+  if ((bForLoan.loans||[]).length) {
+    for (const r of rows) {
+      if (r.dup || r._dir !== 'out') continue;
+      const matched = (bForLoan.loans||[]).find(l => r.description.includes(l.name));
+      if (matched) { r._loanId = matched.id; r._loanName = matched.name; r._isLoanRepayment = true; }
+    }
+  }
+
   _csvRows = rows;
   renderCsvPreview();
   showCsvStep(3);
@@ -5121,7 +5131,7 @@ function renderCsvPreview() {
       <td><select class="csv-mode-sel" onchange="setCsvMode(${i},this.value)" style="font-size:11px;width:80px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type==='transfer'?'disabled':''}>${modeOpts}</select></td>
       <td><select onchange="setCsvType(${i},this.value)" style="font-size:11px;width:90px;background:var(--win);color:var(--text);border:1px solid var(--border)">${typeOpts}</select></td>
       <td style="white-space:nowrap">${r.date}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}${r._isFactoring?` <span style="font-size:10px;background:var(--mp);color:#fff;border-radius:3px;padding:1px 4px">💴FC</span>`:''}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}${r._isFactoring?` <span style="font-size:10px;background:var(--mp);color:#fff;border-radius:3px;padding:1px 4px">💴FC</span>`:''}${r._isLoanRepayment?` <span style="font-size:10px;background:var(--red);color:#fff;border-radius:3px;padding:1px 4px">💳返済</span>`:''}</td>
       <td style="text-align:right;white-space:nowrap;color:${(r.type==='income'||(r.type==='transfer'&&r._dir==='in'))?'var(--green)':'var(--red)'}">${(r.type==='income'||(r.type==='transfer'&&r._dir==='in'))?'+':'-'}${fmt(r.amount)}</td>
       <td style="text-align:right;white-space:nowrap;color:var(--text-muted)">${r.balance!=null?fmt(r.balance):'—'}</td>
       <td id="csv-detail-${i}">${csvDetailCell(r,i)}</td>
@@ -5256,6 +5266,19 @@ async function registerCsvEntries() {
           saveFactoringCases(fcCases);
         }
       }
+    } else if (r._isLoanRepayment) {
+      // ローン返済：残高を減算して家計支出に追加
+      const loan = (b.loans||[]).find(l => l.id === r._loanId);
+      if (loan) loan.balance = Math.max(0, loan.balance - r.amount);
+      const acc = b.accounts.find(a => a.id === r.accountId);
+      if (acc) acc.balance -= r.amount;
+      const entries = getEntries('personal', ey, em0);
+      entries.unshift({ id: Date.now() + Math.random(), date: entryDate,
+        name: `${r._loanName} 返済`, amount: r.amount,
+        type: 'expense', cat: 'ローン・借金',
+        accountId: r.accountId, accountName: r.accountName,
+        paid: true, balanceApplied: true, loanId: r._loanId });
+      setEntries('personal', ey, em0, entries);
     } else {
       // expense / income → entries に追加
       const mode = r.mode || 'personal';
