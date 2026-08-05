@@ -4852,6 +4852,16 @@ async function parseCsvFile() {
     }
   }
 
+  // ファクタリング会社名との照合
+  const fcCompanies = loadFactoringCompanies();
+  if (fcCompanies.length) {
+    for (const r of rows) {
+      if (r.dup || r.type !== 'income') continue;
+      const matched = fcCompanies.find(c => r.description.includes(c.name));
+      if (matched) { r._factoringCompany = matched.name; r._isFactoring = true; }
+    }
+  }
+
   _csvRows = rows;
   renderCsvPreview();
   showCsvStep(3);
@@ -5108,7 +5118,7 @@ function renderCsvPreview() {
     return `<tr id="csv-row-${i}" class="${r.dup?'dup':''}">
       <td><select onchange="setCsvType(${i},this.value)" style="font-size:11px;width:90px;background:var(--win);color:var(--text);border:1px solid var(--border)">${typeOpts}</select></td>
       <td style="white-space:nowrap">${r.date}</td>
-      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}${r._isFactoring?` <span style="font-size:10px;background:var(--mp);color:#fff;border-radius:3px;padding:1px 4px">💴FC</span>`:''}</td>
       <td style="text-align:right;white-space:nowrap;color:${(r.type==='income'||(r.type==='transfer'&&r._dir==='in'))?'var(--green)':'var(--red)'}">${(r.type==='income'||(r.type==='transfer'&&r._dir==='in'))?'+':'-'}${fmt(r.amount)}</td>
       <td style="text-align:right;white-space:nowrap;color:var(--text-muted)">${r.balance!=null?fmt(r.balance):'—'}</td>
       <td id="csv-detail-${i}">${csvDetailCell(r,i)}</td>
