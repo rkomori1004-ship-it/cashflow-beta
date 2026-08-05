@@ -4783,9 +4783,8 @@ function selectCsvBank(bank) {
 
 // ---- CSVパース ----
 async function parseCsvFile() {
-  const errEl = document.getElementById('csv-parse-error');
-  try {
   const fileEl = document.getElementById('csv-file-input');
+  const errEl = document.getElementById('csv-parse-error');
   errEl.textContent = '';
   if (!fileEl.files.length) { errEl.textContent = 'ファイルを選択してください'; return; }
   const file = fileEl.files[0];
@@ -4864,7 +4863,6 @@ async function parseCsvFile() {
     await runGeminiCategoryBatch(needsGemini, geminiKey);
     renderCsvPreview();
   }
-  } catch(e) { errEl.textContent = 'エラー: ' + e.message + ' (' + e.stack + ')'; }
 }
 
 // ---- 銀行パーサー ----
