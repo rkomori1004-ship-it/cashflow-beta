@@ -371,6 +371,20 @@ header {
 }
 .csv-btn:hover { background: #3333cc; }
 
+/* CSVインポート */
+#csv-import-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:1000; overflow-y:auto; padding:16px; }
+#csv-import-modal.open { display:flex; align-items:flex-start; justify-content:center; }
+#csv-import-box { background:var(--win); border:3px solid var(--border-bright); width:100%; max-width:680px; margin:auto; }
+.csv-modal-header { background:var(--win-light); padding:12px 16px; display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid var(--border); }
+.csv-modal-header h3 { color:var(--gold); font-size:14px; margin:0; }
+.csv-preview-table { width:100%; border-collapse:collapse; font-size:11px; }
+.csv-preview-table th { background:var(--win-light); color:var(--text-muted); padding:6px 8px; text-align:left; border-bottom:2px solid var(--border); white-space:nowrap; }
+.csv-preview-table td { padding:5px 8px; border-bottom:1px solid rgba(102,102,255,0.2); vertical-align:middle; }
+.csv-preview-table tr.dup td { opacity:0.45; }
+.csv-preview-table select { font-size:11px; padding:2px 4px; width:auto; background:var(--win); color:var(--text); border:1px solid var(--border); }
+.csv-progress { background:var(--win-light); border:1px solid var(--border); height:8px; margin:8px 0; }
+.csv-progress-bar { height:100%; background:var(--gold); transition:width 0.2s; }
+
 .field label {
   display: block; font-size: 11px; color: var(--text-muted);
   margin-bottom: 4px;
@@ -1057,6 +1071,74 @@ select option { background: #0d0d35; }
       <div class="card-title">💀 ぼうけんのしょを　きえる</div>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:16px">ぜんデータを　さくじょします。このそうさは　もとにもどせません。</p>
       <button class="csv-btn" onclick="resetData()" style="border-color:var(--red);color:var(--red);background:#1a0000">💀 きえてしまえ！</button>
+    </div>
+    <div class="card" style="border-color:var(--green)">
+      <div class="card-title" style="color:var(--green)">📥 CSVインポート（銀行・クレカ）</div>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">三菱UFJ・楽天・住信SBI・セゾン・JCBのCSVを読み込んで収支を自動登録します。カテゴリはGemini AIで自動判定。</p>
+      <div style="margin-bottom:12px">
+        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Gemini APIキー（カテゴリ自動判定用・未設定でも使えます）</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input type="password" id="gemini-api-key-input" placeholder="AIzaSy..." style="flex:1;min-width:200px" oninput="saveGeminiKey()">
+          <span id="gemini-key-status" style="font-size:11px;color:var(--text-hint);align-self:center"></span>
+        </div>
+      </div>
+      <button class="csv-btn" onclick="openCsvImportModal()" style="border-color:var(--green);color:var(--green)">📥 CSVをインポートする</button>
+    </div>
+  </div>
+
+  <!-- CSVインポートモーダル -->
+  <div id="csv-import-modal">
+    <div id="csv-import-box">
+      <div class="csv-modal-header">
+        <h3>📥 CSVインポート</h3>
+        <button class="csv-btn" onclick="closeCsvImportModal()" style="padding:4px 10px;font-size:12px">✕ 閉じる</button>
+      </div>
+      <div style="padding:16px">
+        <!-- STEP1: 銀行選択 -->
+        <div id="csv-step1">
+          <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">① 読み込む種別を選択してください</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+            <button class="csv-btn" onclick="selectCsvBank('mufg')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">🏦</span><span>三菱UFJ銀行</span></button>
+            <button class="csv-btn" onclick="selectCsvBank('rakuten')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">🏦</span><span>楽天銀行</span></button>
+            <button class="csv-btn" onclick="selectCsvBank('sbi')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">🏦</span><span>住信SBI銀行</span></button>
+            <button class="csv-btn" onclick="selectCsvBank('saison')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">💳</span><span>セゾンカード</span></button>
+            <button class="csv-btn" onclick="selectCsvBank('jcb')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">💳</span><span>JCB</span></button>
+          </div>
+        </div>
+        <!-- STEP2: 口座選択＋ファイル選択 -->
+        <div id="csv-step2" style="display:none">
+          <button class="csv-btn" onclick="csvGoBack()" style="font-size:11px;margin-bottom:12px">← 戻る</button>
+          <div style="margin-bottom:12px">
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px" id="csv-account-label">② 紐付ける口座を選択</label>
+            <select id="csv-account-select" style="font-size:13px"></select>
+          </div>
+          <div style="margin-bottom:16px">
+            <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">③ CSVファイルを選択</label>
+            <input type="file" id="csv-file-input" accept=".csv" style="font-size:13px;width:100%">
+          </div>
+          <button class="csv-btn" onclick="parseCsvFile()" style="border-color:var(--green);color:var(--green)">▶ 読み込む</button>
+          <div id="csv-parse-error" style="color:var(--red);font-size:12px;margin-top:8px"></div>
+        </div>
+        <!-- STEP3: プレビュー -->
+        <div id="csv-step3" style="display:none">
+          <button class="csv-btn" onclick="csvGoBack()" style="font-size:11px;margin-bottom:12px">← 戻る</button>
+          <div id="csv-category-progress" style="display:none;margin-bottom:8px">
+            <p style="font-size:11px;color:var(--text-muted)" id="csv-progress-label">カテゴリ判定中…</p>
+            <div class="csv-progress"><div class="csv-progress-bar" id="csv-progress-bar" style="width:0%"></div></div>
+          </div>
+          <div id="csv-summary" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
+          <div style="overflow-x:auto;max-height:360px;overflow-y:auto">
+            <table class="csv-preview-table">
+              <thead><tr><th>種別</th><th>日付</th><th>摘要</th><th>金額</th><th>カテゴリ</th><th>スキップ</th></tr></thead>
+              <tbody id="csv-preview-body"></tbody>
+            </table>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="csv-btn" id="csv-register-btn" onclick="registerCsvEntries()" style="border-color:var(--gold);color:var(--gold)">✔ 登録する（<span id="csv-register-count">0</span>件）</button>
+            <span id="csv-register-msg" style="font-size:12px;color:var(--green)"></span>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -4434,6 +4516,423 @@ if ('serviceWorker' in navigator) {
     }
   }
   window.loadMonthlyReport = loadMonthlyReport;
+</script>
+
+<script>
+// ============================================================
+// 機能④ CSVインポート
+// ============================================================
+
+const IMPORT_HASH_KEY = 'cf-import-hashes-v1';
+const GEMINI_KEY_LS = 'cf-gemini-key';
+const IMPORT_CATS = ['家賃・住宅費','食費','光熱費','交通費','通信費','娯楽・外食','美容・理髪','医療・保険','教育','衣類','その他'];
+
+// ---- Gemini APIキー管理 ----
+function saveGeminiKey() {
+  const v = document.getElementById('gemini-api-key-input').value.trim();
+  if (v) { localStorage.setItem(GEMINI_KEY_LS, v); document.getElementById('gemini-key-status').textContent = '✔ 保存済み'; }
+  else { localStorage.removeItem(GEMINI_KEY_LS); document.getElementById('gemini-key-status').textContent = ''; }
+}
+function loadGeminiKeyUI() {
+  const k = localStorage.getItem(GEMINI_KEY_LS) || '';
+  const el = document.getElementById('gemini-api-key-input');
+  if (el) { el.value = k; document.getElementById('gemini-key-status').textContent = k ? '✔ 保存済み' : ''; }
+}
+
+// ---- ハッシュ管理 ----
+function loadImportHashes() {
+  try { return new Set(JSON.parse(localStorage.getItem(IMPORT_HASH_KEY)) || []); } catch { return new Set(); }
+}
+function saveImportHashes(set) {
+  localStorage.setItem(IMPORT_HASH_KEY, JSON.stringify(Array.from(set)));
+}
+
+// ---- CSV状態 ----
+let _csvBank = '';
+let _csvRows = []; // { date, description, amount, type, category, dup, skip, typeIcon, accountId, accountName, cardId, cardName, isCard }
+
+// ---- モーダル開閉 ----
+function openCsvImportModal() {
+  loadGeminiKeyUI();
+  _csvBank = '';
+  _csvRows = [];
+  showCsvStep(1);
+  document.getElementById('csv-import-modal').classList.add('open');
+}
+function closeCsvImportModal() {
+  document.getElementById('csv-import-modal').classList.remove('open');
+}
+function showCsvStep(n) {
+  [1,2,3].forEach(i => document.getElementById(`csv-step${i}`).style.display = i===n ? '' : 'none');
+}
+function csvGoBack() {
+  const s2 = document.getElementById('csv-step2');
+  if (s2.style.display !== 'none') { showCsvStep(1); } else { showCsvStep(2); }
+}
+
+// ---- 銀行選択 ----
+function selectCsvBank(bank) {
+  _csvBank = bank;
+  showCsvStep(2);
+  const b = loadBalance();
+  const sel = document.getElementById('csv-account-select');
+  const label = document.getElementById('csv-account-label');
+  const isCard = bank === 'saison' || bank === 'jcb';
+  if (isCard) {
+    label.textContent = '② 紐付けるクレジットカードを選択';
+    sel.innerHTML = (b.cards || []).map(c => `<option value="card-${c.id}">${c.name}</option>`).join('') || '<option value="">カードを先に登録してください</option>';
+  } else {
+    label.textContent = '② 紐付ける口座を選択';
+    sel.innerHTML = (b.accounts || []).map(a => `<option value="acc-${a.id}">${a.name}（${fmt(a.balance)}）</option>`).join('') || '<option value="">口座を先に登録してください</option>';
+  }
+  document.getElementById('csv-file-input').value = '';
+  document.getElementById('csv-parse-error').textContent = '';
+}
+
+// ---- CSVパース ----
+async function parseCsvFile() {
+  const fileEl = document.getElementById('csv-file-input');
+  const errEl = document.getElementById('csv-parse-error');
+  errEl.textContent = '';
+  if (!fileEl.files.length) { errEl.textContent = 'ファイルを選択してください'; return; }
+  const file = fileEl.files[0];
+  const isShiftJIS = ['mufg','saison','jcb'].includes(_csvBank);
+  const encoding = isShiftJIS ? 'shift-jis' : 'utf-8';
+  let text;
+  try {
+    const buf = await file.arrayBuffer();
+    text = new TextDecoder(encoding).decode(buf);
+  } catch(e) { errEl.textContent = 'ファイルの読み込みに失敗しました'; return; }
+
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l => l.trim());
+  let rows = [];
+  try {
+    if (_csvBank === 'mufg') rows = parseMUFG(lines);
+    else if (_csvBank === 'rakuten') rows = parseRakuten(lines);
+    else if (_csvBank === 'sbi') rows = parseSBI(lines);
+    else if (_csvBank === 'saison') rows = parseSaison(lines);
+    else if (_csvBank === 'jcb') rows = parseJCB(lines);
+  } catch(e) { errEl.textContent = 'CSV解析に失敗しました。フォーマットを確認してください: ' + e.message; return; }
+
+  if (!rows.length) { errEl.textContent = 'データが見つかりませんでした'; return; }
+
+  // 口座・カード情報付与
+  const sel = document.getElementById('csv-account-select');
+  const rawVal = sel.value;
+  const b = loadBalance();
+  const isCard = _csvBank === 'saison' || _csvBank === 'jcb';
+  rows.forEach(r => {
+    r.isCard = isCard;
+    if (isCard) {
+      const cardId = parseInt(rawVal.slice(5));
+      const card = (b.cards||[]).find(c => c.id === cardId);
+      r.cardId = cardId; r.cardName = card ? card.name : '';
+    } else {
+      const accId = parseInt(rawVal.slice(4));
+      const acc = b.accounts.find(a => a.id === accId);
+      r.accountId = accId; r.accountName = acc ? acc.name : '';
+    }
+  });
+
+  // 重複チェック
+  const hashes = loadImportHashes();
+  for (const r of rows) {
+    const h = await hashPassphrase(`${r.date}|${r.amount}|${r.description}`);
+    r._hash = h;
+    r.dup = hashes.has(h);
+    r.skip = r.dup;
+  }
+
+  _csvRows = rows;
+  renderCsvPreview();
+  showCsvStep(3);
+
+  // カテゴリ自動判定（Gemini）
+  const geminiKey = localStorage.getItem(GEMINI_KEY_LS);
+  const needsGemini = rows.filter(r => !r.dup && r.type === 'expense' && r._needsGemini);
+  if (geminiKey && needsGemini.length) {
+    await runGeminiCategoryBatch(needsGemini, geminiKey);
+    renderCsvPreview();
+  }
+}
+
+// ---- 銀行パーサー ----
+function csvSplit(line) {
+  const res = []; let cur = ''; let inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; } else if (c === ',' && !inQ) { res.push(cur.trim()); cur = ''; } else { cur += c; }
+  }
+  res.push(cur.trim()); return res;
+}
+function parseDate(str) {
+  // YYYY/MM/DD or YYYY年MM月DD日
+  str = str.trim();
+  const m1 = str.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (m1) return `${m1[1]}-${m1[2].padStart(2,'0')}-${m1[3].padStart(2,'0')}`;
+  const m2 = str.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日$/);
+  if (m2) return `${m2[1]}-${m2[2].padStart(2,'0')}-${m2[3].padStart(2,'0')}`;
+  return str;
+}
+function toNum(s) { return parseFloat((s||'').replace(/,/g,'').trim()) || 0; }
+
+function parseMUFG(lines) {
+  // 列順: 年月日, 摘要, 出金金額, 入金金額, 残高, メモ
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = csvSplit(lines[i]);
+    if (cols.length < 4) continue;
+    const date = parseDate(cols[0]); if (!date.match(/^\d{4}-/)) continue;
+    const desc = cols[1] || '';
+    const out = toNum(cols[2]); const inc = toNum(cols[3]);
+    if (out === 0 && inc === 0) continue;
+    const amount = out > 0 ? out : inc;
+    const row = detectType(out > 0 ? 'out' : 'in', desc, amount);
+    row.date = date; row.description = desc; row.amount = amount;
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseRakuten(lines) {
+  // ヘッダー行を「取引日」が含まれる行まで読み飛ばし
+  let start = 0;
+  for (let i = 0; i < lines.length; i++) { if (lines[i].includes('取引日')) { start = i + 1; break; } }
+  const rows = [];
+  for (let i = start; i < lines.length; i++) {
+    const cols = csvSplit(lines[i]);
+    if (cols.length < 4) continue;
+    const date = parseDate(cols[0]); if (!date.match(/^\d{4}-/)) continue;
+    const amtRaw = toNum(cols[1]); // 入出金（正=入金、負=出金）
+    const desc = cols[3] || '';
+    if (amtRaw === 0) continue;
+    const amount = Math.abs(amtRaw);
+    const row = detectType(amtRaw < 0 ? 'out' : 'in', desc, amount);
+    row.date = date; row.description = desc; row.amount = amount;
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseSBI(lines) {
+  // 列順: 日付, 内容, 出金額(円), 入金額(円), 残高(円)
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = csvSplit(lines[i]);
+    if (cols.length < 4) continue;
+    const date = parseDate(cols[0]); if (!date.match(/^\d{4}-/)) continue;
+    const desc = cols[1] || '';
+    const out = toNum(cols[2]); const inc = toNum(cols[3]);
+    if (out === 0 && inc === 0) continue;
+    const amount = out > 0 ? out : inc;
+    const row = detectType(out > 0 ? 'out' : 'in', desc, amount);
+    row.date = date; row.description = desc; row.amount = amount;
+    rows.push(row);
+  }
+  return rows;
+}
+
+function parseSaison(lines) {
+  // ヘッダー行を「ご利用日」まで読み飛ばし
+  let start = 0;
+  for (let i = 0; i < lines.length; i++) { if (lines[i].includes('ご利用日')) { start = i + 1; break; } }
+  const rows = [];
+  for (let i = start; i < lines.length; i++) {
+    const cols = csvSplit(lines[i]);
+    if (cols.length < 4) continue;
+    const date = parseDate(cols[0]); if (!date.match(/^\d{4}-/)) continue;
+    const desc = cols[1] || '';
+    const amount = toNum(cols[3]);
+    if (amount === 0) continue;
+    rows.push({ date, description: desc, amount, type: 'expense', category: 'その他', typeIcon: '🛒', paid: false, _needsGemini: true });
+  }
+  return rows;
+}
+
+function parseJCB(lines) {
+  let start = 0;
+  for (let i = 0; i < lines.length; i++) { if (lines[i].includes('ご利用日')) { start = i + 1; break; } }
+  const rows = [];
+  for (let i = start; i < lines.length; i++) {
+    const cols = csvSplit(lines[i]);
+    if (cols.length < 3) continue;
+    const date = parseDate(cols[0]); if (!date.match(/^\d{4}-/)) continue;
+    const desc = cols[1] || '';
+    // 金額列を探す（数値が入っている最後の列）
+    let amount = 0;
+    for (let j = cols.length - 1; j >= 2; j--) { const v = toNum(cols[j]); if (v > 0) { amount = v; break; } }
+    if (amount === 0) continue;
+    rows.push({ date, description: desc, amount, type: 'expense', category: 'その他', typeIcon: '🛒', paid: false, _needsGemini: true });
+  }
+  return rows;
+}
+
+// ---- 取引種別自動判定 ----
+const TYPE_KEYWORDS = {
+  transfer: ['ATM','現金引出','現金お引出','引出し'],
+  income: ['給与','賞与','報酬','振込入金','振替入金','他行振込入金','利息','利子','給料'],
+  expense_send: ['振込','送金','振替出金'],
+  expense: ['口座振替','自動引落','手数料'],
+};
+
+function detectType(dir, desc, amount) {
+  const d = desc.toUpperCase();
+  // ATM
+  if (TYPE_KEYWORDS.transfer.some(k => desc.includes(k))) {
+    return { type: 'transfer', category: '', typeIcon: '🔄', _needsGemini: false };
+  }
+  if (dir === 'in') {
+    if (TYPE_KEYWORDS.income.some(k => desc.includes(k))) {
+      return { type: 'income', category: '収入', typeIcon: '📥', _needsGemini: false };
+    }
+    return { type: 'income', category: '収入', typeIcon: '📥', _needsGemini: false };
+  }
+  // 出金
+  if (TYPE_KEYWORDS.expense_send.some(k => desc.includes(k))) {
+    return { type: 'expense', category: 'その他', typeIcon: '📤', _needsGemini: true };
+  }
+  return { type: 'expense', category: 'その他', typeIcon: '🛒', _needsGemini: true };
+}
+
+// ---- Geminiカテゴリ判定 ----
+async function runGeminiCategoryBatch(rows, apiKey) {
+  const progressDiv = document.getElementById('csv-category-progress');
+  const progressBar = document.getElementById('csv-progress-bar');
+  const progressLabel = document.getElementById('csv-progress-label');
+  progressDiv.style.display = '';
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    progressLabel.textContent = `カテゴリ判定中… ${i+1}/${rows.length}件`;
+    progressBar.style.width = `${Math.round((i+1)/rows.length*100)}%`;
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text:
+          `あなたは家計簿のカテゴリ分類アシスタントです。摘要文字列を以下のカテゴリのいずれかに分類してください。カテゴリ名のみを返してください。\nカテゴリ一覧: ${IMPORT_CATS.join(', ')}\n摘要: ${r.description}`
+        }] }] })
+      });
+      const j = await res.json();
+      const cat = j.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'その他';
+      r.category = IMPORT_CATS.includes(cat) ? cat : 'その他';
+    } catch { r.category = 'その他'; }
+    // UIを都度更新
+    const row = document.getElementById(`csv-row-${i < _csvRows.length ? _csvRows.indexOf(r) : i}`);
+    if (row) {
+      const catSel = row.querySelector('.cat-sel');
+      if (catSel) catSel.value = r.category;
+    }
+  }
+  progressDiv.style.display = 'none';
+}
+
+// ---- プレビュー描画 ----
+function renderCsvPreview() {
+  const tbody = document.getElementById('csv-preview-body');
+  const newRows = _csvRows.filter(r => !r.dup);
+  const dupRows = _csvRows.filter(r => r.dup);
+  document.getElementById('csv-summary').textContent = `新規: ${newRows.length}件 / 重複スキップ: ${dupRows.length}件`;
+  document.getElementById('csv-register-count').textContent = newRows.filter(r=>!r.skip).length;
+
+  tbody.innerHTML = _csvRows.map((r,i) => {
+    const typeOpts = [
+      {v:'income',l:'📥 収入'},{v:'expense',l:'🛒 支出'},{v:'transfer',l:'🔄 資産移動'}
+    ].map(o=>`<option value="${o.v}"${r.type===o.v?' selected':''}>${o.l}</option>`).join('');
+    const catOpts = IMPORT_CATS.map(c=>`<option${r.category===c?' selected':''}>${c}</option>`).join('');
+    const skipCheck = r.dup ? '<span style="color:var(--text-muted);font-size:11px">重複</span>' :
+      `<input type="checkbox" ${r.skip?'':'checked'} onchange="toggleCsvSkip(${i},this.checked)" style="width:auto">`;
+    return `<tr id="csv-row-${i}" class="${r.dup?'dup':''}">
+      <td><select onchange="setCsvType(${i},this.value)" style="font-size:11px;width:90px;background:var(--win);color:var(--text);border:1px solid var(--border)">${typeOpts}</select></td>
+      <td style="white-space:nowrap">${r.date}</td>
+      <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}</td>
+      <td style="text-align:right;white-space:nowrap">${fmt(r.amount)}</td>
+      <td><select class="cat-sel" onchange="setCsvCat(${i},this.value)" style="font-size:11px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type!=='expense'?'disabled':''}>${catOpts}</select></td>
+      <td style="text-align:center">${skipCheck}</td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleCsvSkip(i, checked) {
+  _csvRows[i].skip = !checked;
+  document.getElementById('csv-register-count').textContent = _csvRows.filter(r=>!r.dup&&!r.skip).length;
+}
+function setCsvType(i, v) {
+  _csvRows[i].type = v;
+  const row = document.getElementById(`csv-row-${i}`);
+  if (row) { const catSel = row.querySelector('.cat-sel'); if (catSel) catSel.disabled = (v !== 'expense'); }
+}
+function setCsvCat(i, v) { _csvRows[i].category = v; }
+
+// ---- 登録処理 ----
+async function registerCsvEntries() {
+  const toReg = _csvRows.filter(r => !r.dup && !r.skip);
+  if (!toReg.length) { document.getElementById('csv-register-msg').textContent = '登録する行がありません'; return; }
+  const b = loadBalance();
+  const today = new Date();
+  const [y, m] = [today.getFullYear(), today.getMonth()]; // 0-indexed month
+
+  for (const r of toReg) {
+    const entryDate = r.date || '';
+    // 日付から年月を取得
+    const dateParts = entryDate.match(/^(\d{4})-(\d{2})/);
+    const ey = dateParts ? parseInt(dateParts[1]) : y;
+    const em0 = dateParts ? parseInt(dateParts[2]) - 1 : m; // 0-indexed
+
+    if (r.type === 'transfer') {
+      // ATM出金: balance.transfers[] に追加して口座残高を減算
+      const acc = b.accounts.find(a => a.id === r.accountId);
+      if (acc) {
+        acc.balance -= r.amount;
+        if (!b.transfers) b.transfers = [];
+        b.transfers.unshift({ id: Date.now() + Math.random(), date: entryDate,
+          fromId: r.accountId, fromName: r.accountName,
+          toId: -1, toName: '財布（現金）', amount: r.amount });
+      }
+    } else {
+      // expense / income → entries に追加
+      const entries = getEntries('personal', ey, em0);
+      const entry = {
+        id: Date.now() + Math.random(),
+        name: r.description,
+        amount: r.amount,
+        type: r.type,
+        cat: r.type === 'expense' ? r.category : '収入',
+        date: entryDate,
+      };
+      if (r.isCard) {
+        entry.cardId = r.cardId;
+        entry.cardName = r.cardName;
+        entry.paid = false;
+        entry.balanceApplied = false;
+      } else {
+        entry.accountId = r.accountId;
+        entry.accountName = r.accountName;
+        entry.paid = true;
+        entry.balanceApplied = true;
+        const acc = b.accounts.find(a => a.id === r.accountId);
+        if (acc) { acc.balance += r.type === 'income' ? r.amount : -r.amount; }
+      }
+      entries.unshift(entry);
+      setEntries('personal', ey, em0, entries);
+    }
+  }
+
+  saveBalance(b);
+
+  // ハッシュ登録
+  const hashes = loadImportHashes();
+  for (const r of toReg) { hashes.add(r._hash); }
+  saveImportHashes(hashes);
+
+  document.getElementById('csv-register-msg').textContent = `✔ ${toReg.length}件を登録しました`;
+  document.getElementById('csv-register-btn').disabled = true;
+
+  renderBalance();
+  renderPersonal();
+}
+
+// ---- 初期化 ----
+document.addEventListener('DOMContentLoaded', () => { loadGeminiKeyUI(); });
 </script>
 </body>
 </html>
