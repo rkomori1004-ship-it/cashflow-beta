@@ -4781,7 +4781,7 @@ async function parseCsvFile() {
   errEl.textContent = '';
   if (!fileEl.files.length) { errEl.textContent = 'ファイルを選択してください'; return; }
   const file = fileEl.files[0];
-  const isShiftJIS = ['mufg','saison','jcb'].includes(_csvBank);
+  const isShiftJIS = ['mufg','sbi','saison','jcb'].includes(_csvBank);
   const encoding = isShiftJIS ? 'shift-jis' : 'utf-8';
   let text;
   try {
