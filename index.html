@@ -5014,15 +5014,15 @@ function detectType(dir, desc, amount) {
   }
   if (dir === 'in') {
     if (TYPE_KEYWORDS.income.some(k => desc.includes(k))) {
-      return { type: 'income', category: '収入', typeIcon: '📥', _needsGemini: false };
+      return { type: 'income', category: '収入', typeIcon: '📥', _needsGemini: false, _dir: 'in' };
     }
-    return { type: 'income', category: '収入', typeIcon: '📥', _needsGemini: false };
+    return { type: 'income', category: '収入', typeIcon: '📥', _needsGemini: false, _dir: 'in' };
   }
   // 出金
   if (TYPE_KEYWORDS.expense_send.some(k => desc.includes(k))) {
-    return { type: 'expense', category: 'その他', typeIcon: '📤', _needsGemini: true };
+    return { type: 'expense', category: 'その他', typeIcon: '📤', _needsGemini: true, _dir: 'out' };
   }
-  return { type: 'expense', category: 'その他', typeIcon: '🛒', _needsGemini: true };
+  return { type: 'expense', category: 'その他', typeIcon: '🛒', _needsGemini: true, _dir: 'out' };
 }
 
 // ---- Geminiカテゴリ判定 ----
