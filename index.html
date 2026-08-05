@@ -5112,7 +5112,7 @@ function renderCsvPreview() {
       <td style="text-align:right;white-space:nowrap;color:${(r.type==='income'||(r.type==='transfer'&&r._dir==='in'))?'var(--green)':'var(--red)'}">${(r.type==='income'||(r.type==='transfer'&&r._dir==='in'))?'+':'-'}${fmt(r.amount)}</td>
       <td style="text-align:right;white-space:nowrap;color:var(--text-muted)">${r.balance!=null?fmt(r.balance):'—'}</td>
       <td id="csv-detail-${i}">${csvDetailCell(r,i)}</td>
-      <td><select onchange="setCsvMode(${i},this.value)" style="font-size:11px;width:80px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type==='transfer'?'disabled':''}>${modeOpts}</select></td>
+      <td><select class="csv-mode-sel" onchange="setCsvMode(${i},this.value)" style="font-size:11px;width:80px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type==='transfer'?'disabled':''}>${modeOpts}</select></td>
       <td style="text-align:center">${skipCheck}</td>
     </tr>`;
   }).join('');
@@ -5136,7 +5136,7 @@ function setCsvType(i, v) {
       amtCell.style.color = isIn ? 'var(--green)' : 'var(--red)';
       amtCell.textContent = (isIn ? '+' : '-') + fmt(_csvRows[i].amount);
     }
-    const modeSel = row.querySelectorAll('select')[2];
+    const modeSel = row.querySelector('.csv-mode-sel');
     if (modeSel) modeSel.disabled = (v === 'transfer');
   }
 }
