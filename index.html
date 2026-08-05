@@ -867,11 +867,13 @@ select option { background: #0d0d35; }
       <div class="card-title" style="color:var(--green)">📥 CSVインポート（銀行・クレカ）</div>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">三菱UFJ・楽天・住信SBI・セゾン・JCBのCSVを読み込んで収支を自動登録します。カテゴリはGemini AIで自動判定。</p>
       <div style="margin-bottom:12px">
-        <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px">Gemini APIキー（カテゴリ自動分類に使用・未入力でも動作します）</label>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <input type="password" id="gemini-api-key-input" placeholder="AIzaSy..." style="flex:1;min-width:200px" oninput="saveGeminiKey()">
-          <span id="gemini-key-status" style="font-size:11px;color:var(--text-hint);align-self:center"></span>
-        </div>
+        <details>
+          <summary style="font-size:11px;color:var(--text-hint);cursor:pointer;user-select:none">⚙ Gemini APIキー設定（カテゴリ自動分類）</summary>
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+            <input type="password" id="gemini-api-key-input" placeholder="AIzaSy..." style="flex:1;min-width:200px" oninput="saveGeminiKey()">
+            <span id="gemini-key-status" style="font-size:11px;color:var(--text-hint);align-self:center"></span>
+          </div>
+        </details>
       </div>
       <button class="csv-btn" onclick="openCsvImportModal()" style="border-color:var(--green);color:var(--green)">📥 CSVをインポートする</button>
     </div>
