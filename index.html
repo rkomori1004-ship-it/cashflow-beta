@@ -621,6 +621,7 @@ select option { background: #0d0d35; }
     </div>
     <div class="metrics" id="personal-metrics"></div>
     <div id="daily-allowance-card"></div>
+    <div id="today-spendable-card"></div>
     <div id="factoring-home-summary"></div>
     <div class="card">
       <div class="card-title">収入を追加</div>
@@ -1042,8 +1043,9 @@ select option { background: #0d0d35; }
         <div class="field"><label>支出上限（円）</label><input id="budget-exp" type="number" placeholder="200000"></div>
         <div class="field"><label>フリーランス売上目標（円）</label><input id="budget-biz-inc" type="number" placeholder="300000"></div>
         <div class="field"><label>フリーランス経費上限（円）</label><input id="budget-biz-exp" type="number" placeholder="50000"></div>
+        <div class="field" style="grid-column:span 2"><label>💰 今月の貯金目標（円）</label><input id="savings-goal-input" type="number" placeholder="50000" style="border-color:var(--gold)"></div>
       </div>
-      <button class="csv-btn" onclick="saveBudget()" style="border-color:var(--accent);color:var(--accent);background:var(--accent-bg)">保存する</button>
+      <button class="csv-btn" onclick="saveBudgetAndGoal()" style="border-color:var(--accent);color:var(--accent);background:var(--accent-bg)">保存する</button>
     </div>
 
     <!-- 家事按分設定 -->
@@ -3086,6 +3088,84 @@ function saveBudget() {
   renderBudget();
 }
 
+// ---- 貯金目標（今日使える額ベース） ----
+function loadSavingsGoal() { try { return JSON.parse(localStorage.getItem('cf-savings-goal-v1')) || {}; } catch(e) { return {}; } }
+function saveSavingsGoal(g) { localStorage.setItem('cf-savings-goal-v1', JSON.stringify(g)); }
+
+function saveBudgetAndGoal() {
+  saveBudget();
+  const v = parseFloat(document.getElementById('savings-goal-input').value);
+  const g = loadSavingsGoal();
+  if (!isNaN(v) && v >= 0) { g.monthlyGoal = v; } else { delete g.monthlyGoal; }
+  saveSavingsGoal(g);
+  renderTodaySpendable();
+}
+
+function calcTodaySpendable() {
+  const today = new Date();
+  const y = today.getFullYear(), m = today.getMonth(); // 0-indexed
+  const thisMonth1 = `${y}-${String(m+1).padStart(2,'0')}`; // 'YYYY-MM'
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const remainingDays = Math.max(daysInMonth - today.getDate() + 1, 1);
+
+  // 口座残高合計
+  const b = loadBalance();
+  const balance = (b.accounts||[]).reduce((s,a) => s + (a.balance||0), 0);
+
+  // 今月の収入見込み（business income: 入金済でなく dueDate が今月以前）
+  const bizEntries = getEntries('business', y, m);
+  const expectedIncome = bizEntries
+    .filter(e => e.type === 'income' && e.status !== '入金済' && e.dueDate && e.dueDate.slice(0,7) <= thisMonth1)
+    .reduce((s,e) => s + e.amount, 0);
+
+  // 今月の固定支出合計（ローン月返済 + 未払い今月分）
+  const loanTotal = (b.loans||[]).reduce((s,l) => s + (l.monthly||0), 0);
+  const unpaidThisMonth = getUnpaidItems()
+    .filter(u => u.month === thisMonth1)
+    .reduce((s,u) => s + u.amount, 0);
+  const fixedExpenses = loanTotal + unpaidThisMonth;
+
+  // 貯金目標ベース
+  const g = loadSavingsGoal();
+  const savingsGoal = (typeof g.monthlyGoal === 'number') ? g.monthlyGoal : null;
+  const savingsBased = savingsGoal !== null
+    ? (expectedIncome - savingsGoal) / remainingDays
+    : null;
+
+  // 固定支出ベース
+  const fixedBased = (balance + expectedIncome - fixedExpenses) / remainingDays;
+
+  return { savingsBased, fixedBased, remainingDays, savingsGoal, balance, expectedIncome, fixedExpenses };
+}
+
+function renderTodaySpendable() {
+  const el = document.getElementById('today-spendable-card');
+  if (!el) return;
+  const { savingsBased, fixedBased, remainingDays, savingsGoal } = calcTodaySpendable();
+
+  function row(label, value, hasGoal) {
+    if (!hasGoal) return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--text-hint)">${label}</span>
+      <span style="font-size:12px;color:var(--text-hint)">目標未設定</span>
+    </div>`;
+    const isOver = value < 0;
+    const color = isOver ? 'var(--red)' : 'var(--green)';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--text-muted)">${label}</span>
+      <span style="font-family:'Press Start 2P',monospace;font-size:15px;color:${color}">
+        ${isOver ? '⚠ -'+fmt(Math.abs(Math.floor(value))) : fmt(Math.floor(value))}
+      </span>
+    </div>`;
+  }
+
+  el.innerHTML = `<div class="card" style="border-color:var(--gold);margin-bottom:0">
+    <div class="card-title" style="color:var(--gold)">💰 今日使える額</div>
+    ${row('貯金目標ベース', savingsBased, savingsBased !== null)}
+    ${row('固定支出ベース', fixedBased, true)}
+    <div style="font-size:11px;color:var(--text-hint);margin-top:8px;text-align:right">残り${remainingDays}日${savingsGoal !== null ? ' / 貯金目標¥'+savingsGoal.toLocaleString('ja-JP') : ''}</div>
+  </div>`;
+}
+
 // ---- カテゴリ別予算 ----
 function setCategoryBudget() {
   const catEl = document.getElementById('catbudget-cat');
@@ -3366,6 +3446,9 @@ function renderBudget() {
   document.getElementById('budget-exp').value = b.exp||'';
   document.getElementById('budget-biz-inc').value = b.bizInc||'';
   document.getElementById('budget-biz-exp').value = b.bizExp||'';
+  const g = loadSavingsGoal();
+  const sgEl = document.getElementById('savings-goal-input');
+  if (sgEl) sgEl.value = (typeof g.monthlyGoal === 'number') ? g.monthlyGoal : '';
   renderAllocations();
 
   const pm = state.personal.month, py = state.personal.year;
@@ -4194,6 +4277,7 @@ function renderAll() {
   renderLevel();
   renderFactoringManagement();
   renderFactorySummary();
+  renderTodaySpendable();
 }
 
 function toggleSubMenu() {
@@ -4369,7 +4453,7 @@ if ('serviceWorker' in navigator) {
   }
 
   // localStorageへの書き込みを監視して自動的にクラウド同期をスケジュール
-  const SYNCED_KEYS = ['cf-manager-v1', 'cf-balance-v1', 'cf-budget-v1', 'cf-level-v1', 'cf-unpaid-v1', 'cf-templates-v1', 'cf-goals-v1', 'cf-allocation-v1', 'cf-rewards-v1', 'cf-factoring-v1', 'cf-factoring-companies-v1', 'cf-factoring-cases-v1'];
+  const SYNCED_KEYS = ['cf-manager-v1', 'cf-balance-v1', 'cf-budget-v1', 'cf-level-v1', 'cf-unpaid-v1', 'cf-templates-v1', 'cf-goals-v1', 'cf-allocation-v1', 'cf-rewards-v1', 'cf-factoring-v1', 'cf-factoring-companies-v1', 'cf-factoring-cases-v1', 'cf-savings-goal-v1'];
   const origSetItem = localStorage.setItem.bind(localStorage);
   localStorage.setItem = function(key, value) {
     origSetItem(key, value);
