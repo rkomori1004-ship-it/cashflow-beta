@@ -1181,7 +1181,7 @@ select option { background: #0d0d35; }
           <div id="csv-summary" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
           <div style="overflow-x:auto;max-height:360px;overflow-y:auto">
             <table class="csv-preview-table">
-              <thead><tr><th>種別</th><th>日付</th><th>摘要</th><th>金額</th><th>差引残高</th><th>カテゴリ</th><th>登録先</th><th>登録</th></tr></thead>
+              <thead><tr><th>登録先</th><th>種別</th><th>日付</th><th>摘要</th><th>金額</th><th>差引残高</th><th>カテゴリ</th><th>登録</th></tr></thead>
               <tbody id="csv-preview-body"></tbody>
             </table>
           </div>
@@ -4715,6 +4715,7 @@ async function hashPassphrase(pass) {
 const IMPORT_HASH_KEY = 'cf-import-hashes-v1';
 const GEMINI_KEY_LS = 'cf-gemini-key';
 const IMPORT_CATS = ['家賃・住宅費','食費','光熱費','交通費','通信費','娯楽・外食','美容・理髪','医療・保険','教育','衣類','その他'];
+const IMPORT_BIZ_CATS = ['家賃・地代','水道光熱費','通信費','ソフトウェア・SaaS','交通費','機材・備品','外注費','交際費','会議費','書籍・学習','健康投資','広告宣伝','その他経費'];
 
 // ---- Gemini APIキー管理 ----
 function saveGeminiKey() {
@@ -5073,7 +5074,8 @@ const INCOME_TYPES = ['給与','ボーナス','副業','利息・配当','その
 function csvDetailCell(r, i) {
   const sel = 'font-size:11px;background:var(--win);color:var(--text);border:1px solid var(--border)';
   if (r.type === 'expense') {
-    const catOpts = IMPORT_CATS.map(c=>`<option${r.category===c?' selected':''}>${c}</option>`).join('');
+    const cats = (r.mode || 'personal') === 'business' ? IMPORT_BIZ_CATS : IMPORT_CATS;
+    const catOpts = cats.map(c=>`<option${r.category===c?' selected':''}>${c}</option>`).join('');
     return `<select class="csv-detail-sel" onchange="setCsvCat(${i},this.value)" style="${sel}">${catOpts}</select>`;
   }
   if (r.type === 'income') {
@@ -5116,13 +5118,13 @@ function renderCsvPreview() {
     const skipCheck = r.dup ? '<span style="color:var(--text-muted);font-size:11px">重複</span>' :
       `<input type="checkbox" ${r.skip?'':'checked'} onchange="toggleCsvSkip(${i},this.checked)" style="width:auto">`;
     return `<tr id="csv-row-${i}" class="${r.dup?'dup':''}">
+      <td><select class="csv-mode-sel" onchange="setCsvMode(${i},this.value)" style="font-size:11px;width:80px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type==='transfer'?'disabled':''}>${modeOpts}</select></td>
       <td><select onchange="setCsvType(${i},this.value)" style="font-size:11px;width:90px;background:var(--win);color:var(--text);border:1px solid var(--border)">${typeOpts}</select></td>
       <td style="white-space:nowrap">${r.date}</td>
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}${r._isFactoring?` <span style="font-size:10px;background:var(--mp);color:#fff;border-radius:3px;padding:1px 4px">💴FC</span>`:''}</td>
       <td style="text-align:right;white-space:nowrap;color:${(r.type==='income'||(r.type==='transfer'&&r._dir==='in'))?'var(--green)':'var(--red)'}">${(r.type==='income'||(r.type==='transfer'&&r._dir==='in'))?'+':'-'}${fmt(r.amount)}</td>
       <td style="text-align:right;white-space:nowrap;color:var(--text-muted)">${r.balance!=null?fmt(r.balance):'—'}</td>
       <td id="csv-detail-${i}">${csvDetailCell(r,i)}</td>
-      <td><select class="csv-mode-sel" onchange="setCsvMode(${i},this.value)" style="font-size:11px;width:80px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type==='transfer'?'disabled':''}>${modeOpts}</select></td>
       <td style="text-align:center">${skipCheck}</td>
     </tr>`;
   }).join('');
@@ -5158,7 +5160,14 @@ function setCsvDir(i, v) {
   const cell = document.getElementById(`csv-detail-${i}`);
   if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
 }
-function setCsvMode(i, v) { _csvRows[i].mode = v; }
+function setCsvMode(i, v) {
+  _csvRows[i].mode = v;
+  if (_csvRows[i].type === 'expense') {
+    _csvRows[i].category = v === 'business' ? 'その他経費' : 'その他';
+    const cell = document.getElementById(`csv-detail-${i}`);
+    if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
+  }
+}
 
 // ---- 登録処理 ----
 async function registerCsvEntries() {
