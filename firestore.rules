@@ -12,6 +12,12 @@ service cloud.firestore {
         allow read: if true;
         allow write: if false;
       }
+      // AI利用回数カウンター。クライアントからの読み書きを禁止し、
+      // Cloud Functions（Admin SDK）経由のみ更新を許可する。
+      match /aiUsage/{date} {
+        allow read: if false;
+        allow write: if false;
+      }
     }
   }
 }
