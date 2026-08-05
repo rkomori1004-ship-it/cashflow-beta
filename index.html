@@ -1181,7 +1181,7 @@ select option { background: #0d0d35; }
           <div id="csv-summary" style="font-size:12px;color:var(--text-muted);margin-bottom:8px"></div>
           <div style="overflow-x:auto;max-height:360px;overflow-y:auto">
             <table class="csv-preview-table">
-              <thead><tr><th>種別</th><th>日付</th><th>摘要</th><th>金額</th><th>カテゴリ</th><th>スキップ</th></tr></thead>
+              <thead><tr><th>種別</th><th>日付</th><th>摘要</th><th>金額</th><th>カテゴリ</th><th>登録先</th><th>スキップ</th></tr></thead>
               <tbody id="csv-preview-body"></tbody>
             </table>
           </div>
@@ -5081,6 +5081,9 @@ function renderCsvPreview() {
     const typeOpts = [
       {v:'income',l:'📥 収入'},{v:'expense',l:'🛒 支出'},{v:'transfer',l:'🔄 資産移動'}
     ].map(o=>`<option value="${o.v}"${r.type===o.v?' selected':''}>${o.l}</option>`).join('');
+    const modeOpts = [
+      {v:'personal',l:'🏠 家計'},{v:'business',l:'💼 仕事'}
+    ].map(o=>`<option value="${o.v}"${(r.mode||'personal')===o.v?' selected':''}>${o.l}</option>`).join('');
     const skipCheck = r.dup ? '<span style="color:var(--text-muted);font-size:11px">重複</span>' :
       `<input type="checkbox" ${r.skip?'':'checked'} onchange="toggleCsvSkip(${i},this.checked)" style="width:auto">`;
     return `<tr id="csv-row-${i}" class="${r.dup?'dup':''}">
@@ -5089,6 +5092,7 @@ function renderCsvPreview() {
       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.description}">${r.description}</td>
       <td style="text-align:right;white-space:nowrap">${fmt(r.amount)}</td>
       <td id="csv-detail-${i}">${csvDetailCell(r,i)}</td>
+      <td><select onchange="setCsvMode(${i},this.value)" style="font-size:11px;width:80px;background:var(--win);color:var(--text);border:1px solid var(--border)" ${r.type==='transfer'?'disabled':''}>${modeOpts}</select></td>
       <td style="text-align:center">${skipCheck}</td>
     </tr>`;
   }).join('');
@@ -5102,10 +5106,16 @@ function setCsvType(i, v) {
   _csvRows[i].type = v;
   const cell = document.getElementById(`csv-detail-${i}`);
   if (cell) cell.innerHTML = csvDetailCell(_csvRows[i], i);
+  const row = document.getElementById(`csv-row-${i}`);
+  if (row) {
+    const modeSel = row.querySelectorAll('select')[2];
+    if (modeSel) modeSel.disabled = (v === 'transfer');
+  }
 }
 function setCsvCat(i, v) { _csvRows[i].category = v; }
 function setCsvIncometype(i, v) { _csvRows[i].incomeType = v; }
 function setCsvTransferTo(i, v) { _csvRows[i].transferToId = parseInt(v); }
+function setCsvMode(i, v) { _csvRows[i].mode = v; }
 
 // ---- 登録処理 ----
 async function registerCsvEntries() {
@@ -5137,7 +5147,8 @@ async function registerCsvEntries() {
       }
     } else {
       // expense / income → entries に追加
-      const entries = getEntries('personal', ey, em0);
+      const mode = r.mode || 'personal';
+      const entries = getEntries(mode, ey, em0);
       const entry = {
         id: Date.now() + Math.random(),
         name: r.description,
