@@ -4706,6 +4706,12 @@ if ('serviceWorker' in navigator) {
 // 機能④ CSVインポート
 // ============================================================
 
+async function hashPassphrase(pass) {
+  const enc = new TextEncoder().encode(pass);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 const IMPORT_HASH_KEY = 'cf-import-hashes-v1';
 const GEMINI_KEY_LS = 'cf-gemini-key';
 const IMPORT_CATS = ['家賃・住宅費','食費','光熱費','交通費','通信費','娯楽・外食','美容・理髪','医療・保険','教育','衣類','その他'];
