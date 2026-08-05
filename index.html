@@ -5137,7 +5137,13 @@ async function registerCsvEntries() {
       const toId = r.transferToId !== undefined ? r.transferToId : -1;
       const toAcc = toId >= 0 ? (b.accounts||[]).find(a => a.id === toId) : null;
       const toName = toAcc ? toAcc.name : '財布（現金）';
-      if (acc) {
+      // 同日・同額・同口座間の逆方向登録（入金側CSVの重複）をスキップ
+      const alreadyExists = (b.transfers||[]).some(t =>
+        t.date === entryDate && t.amount === r.amount &&
+        ((t.fromId === r.accountId && t.toId === toId) ||
+         (t.fromId === toId && t.toId === r.accountId))
+      );
+      if (acc && !alreadyExists) {
         acc.balance -= r.amount;
         if (toAcc) toAcc.balance += r.amount;
         if (!b.transfers) b.transfers = [];
