@@ -2137,15 +2137,26 @@ function saveAsTemplate(mode, type) {
   }
   const dayInput = prompt(`「${name}」の支払日を入力してください（毎月◯日）\n※スキップする場合はキャンセル`, '');
   const day = dayInput !== null ? parseInt(dayInput) : null;
+  const tplId = Date.now();
+  const validDay = (day >= 1 && day <= 31) ? day : null;
   const list = loadTemplates();
   list.push({
-    id: Date.now(), mode, type,
+    id: tplId, mode, type,
     name, amount, cat: catEl.value,
     paymentRaw: accEl ? accEl.value : '',
-    day: (day >= 1 && day <= 31) ? day : null
+    day: validDay
   });
   saveTemplates(list);
-  alert(`「${name}」を固定費テンプレートに登録しました！${(day >= 1 && day <= 31) ? `（毎月${day}日）` : ''}`);
+
+  // 現在表示中の月に即座にエントリを追加
+  const { year, month } = state[mode];
+  const today = new Date();
+  const todayDay = today.getDate();
+  const isCurrentMonth = year === today.getFullYear() && month === today.getMonth();
+  const defer = isCurrentMonth && validDay && validDay > todayDay;
+  addFromTemplate(tplId, { deferBalance: defer, silent: true });
+
+  alert(`「${name}」を固定費テンプレートに登録し、今月分を追加しました！${validDay ? `（毎月${validDay}日）` : ''}`);
   renderAll();
 }
 
@@ -2156,7 +2167,7 @@ function addFromTemplate(id, { deferBalance = false, silent = false } = {}) {
   const { month, year } = state[mode];
   const entries = getEntries(mode, year, month);
   const isInc = type === 'income';
-  const entry = { id: Date.now(), name: tpl.name, amount: tpl.amount, type, cat: tpl.cat };
+  const entry = { id: Date.now(), name: tpl.name, amount: tpl.amount, type, cat: tpl.cat, templateAutoAdded: true };
   if (tpl.day) {
     const lastDay = new Date(year, month + 1, 0).getDate();
     const d = Math.min(tpl.day, lastDay);
