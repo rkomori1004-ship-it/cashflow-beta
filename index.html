@@ -4739,6 +4739,9 @@ function openCsvImportModal() {
   loadGeminiKeyUI();
   _csvBank = '';
   _csvRows = [];
+  document.getElementById('csv-register-btn').disabled = false;
+  document.getElementById('csv-register-msg').textContent = '';
+  document.getElementById('csv-register-count').textContent = '0';
   showCsvStep(1);
   document.getElementById('csv-import-modal').classList.add('open');
 }
