@@ -1749,15 +1749,57 @@ function renderUnpaidList() {
   const catIcon = { 'クレジットカード':'💳', 'ローン・借金':'📋', '公共料金':'💡', '税金':'🏛️', 'その他':'📝', '家計の支出':'🏠', '仕事の経費':'💼' };
 
   listEl.innerHTML = list.length ? list.map(u => `
-    <div class="entry">
+    <div class="entry" id="unpaid-item-${u.kind}-${u.id}">
       <span style="font-size:11px;color:var(--text-hint);font-family:var(--mono);white-space:nowrap">${u.month}</span>
       <span class="entry-name">${catIcon[u.cat]||'📝'} ${u.name}<span class="acc-badge" style="border-color:var(--red);color:var(--red)">${u.linkName || u.cat}</span></span>
       <span class="entry-amount exp">-${fmt(u.amount)}</span>
+      ${u.kind === 'manual' ? `<button class="del-btn" onclick="editUnpaid(${u.id})" title="編集" style="background:var(--win);border-color:var(--gold);color:var(--gold)">✏</button>` : ''}
       <button class="del-btn" onclick="${u.kind === 'manual' ? `markUnpaidDone(${u.id})` : `markAutoUnpaidDone('${u.mode}','${u.bucketKey}',${u.id})`}" title="支払い済みにする">✓</button>
+      ${u.kind === 'manual' ? `<button class="del-btn" onclick="deleteUnpaid(${u.id})" title="削除">×</button>` : ''}
     </div>`).join('') : '<div class="empty">未払いの記録はありません</div>';
 
   const total = list.reduce((s,u) => s + u.amount, 0);
   totalEl.textContent = list.length ? `合計 -${fmt(total)}` : '';
+}
+
+function deleteUnpaid(id) {
+  const list = loadUnpaid();
+  saveUnpaid(list.filter(u => u.id !== id));
+  renderUnpaidList();
+}
+
+function editUnpaid(id) {
+  const list = loadUnpaid();
+  const u = list.find(x => x.id === id);
+  if (!u) return;
+  const el = document.getElementById(`unpaid-item-manual-${id}`);
+  if (!el) return;
+  const inpStyle = 'background:var(--win);color:var(--text);border:1px solid var(--border);padding:3px 6px;font-size:12px;width:100%';
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:90px 1fr 100px auto;gap:6px;align-items:center;width:100%">
+      <input type="month" id="uedit-month-${id}" value="${u.month}" style="${inpStyle}">
+      <input type="text" id="uedit-name-${id}" value="${u.name}" style="${inpStyle}">
+      <input type="number" id="uedit-amount-${id}" value="${u.amount}" style="${inpStyle}">
+      <div style="display:flex;gap:4px">
+        <button class="add-btn green" onclick="saveUnpaidEdit(${id})" style="height:28px;padding:0 10px;font-size:12px">保存</button>
+        <button class="del-btn" onclick="renderUnpaidList()" title="キャンセル">×</button>
+      </div>
+    </div>`;
+}
+
+function saveUnpaidEdit(id) {
+  const list = loadUnpaid();
+  const u = list.find(x => x.id === id);
+  if (!u) return;
+  const month = document.getElementById(`uedit-month-${id}`).value;
+  const name = document.getElementById(`uedit-name-${id}`).value.trim();
+  const amount = parseFloat(document.getElementById(`uedit-amount-${id}`).value);
+  if (!name || isNaN(amount) || amount <= 0) return;
+  u.month = month || u.month;
+  u.name = name;
+  u.amount = amount;
+  saveUnpaid(list);
+  renderUnpaidList();
 }
 
 // ---- リマインダーバナー ----
@@ -4296,6 +4338,40 @@ function deleteLoan(id) {
   renderBalance();
 }
 
+function editLoan(id) {
+  const b = loadBalance();
+  const l = (b.loans||[]).find(x => x.id === id);
+  if (!l) return;
+  const el = document.getElementById(`loan-item-${id}`);
+  if (!el) return;
+  const inp = 'background:var(--win);color:var(--text);border:1px solid var(--border);padding:3px 6px;font-size:12px;width:100%';
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1.2fr 1fr 1fr 60px auto;gap:6px;align-items:center;width:100%">
+      <input type="text" id="ledit-name-${id}" value="${l.name}" placeholder="名称" style="${inp}">
+      <input type="number" id="ledit-balance-${id}" value="${l.balance}" placeholder="残高" style="${inp}">
+      <input type="number" id="ledit-monthly-${id}" value="${l.monthly}" placeholder="月返済額" style="${inp}">
+      <input type="number" id="ledit-day-${id}" value="${l.day}" min="1" max="31" placeholder="返済日" style="${inp}">
+      <div style="display:flex;gap:4px">
+        <button class="add-btn green" onclick="saveLoanEdit(${id})" style="height:28px;padding:0 10px;font-size:12px">保存</button>
+        <button class="del-btn" onclick="renderBalance()" title="キャンセル">×</button>
+      </div>
+    </div>`;
+}
+
+function saveLoanEdit(id) {
+  const b = loadBalance();
+  const l = (b.loans||[]).find(x => x.id === id);
+  if (!l) return;
+  const name = document.getElementById(`ledit-name-${id}`).value.trim();
+  const balance = parseFloat(document.getElementById(`ledit-balance-${id}`).value);
+  const monthly = parseFloat(document.getElementById(`ledit-monthly-${id}`).value);
+  const day = parseInt(document.getElementById(`ledit-day-${id}`).value);
+  if (!name || isNaN(balance) || isNaN(monthly) || isNaN(day)) return;
+  l.name = name; l.balance = balance; l.monthly = monthly; l.day = day;
+  saveBalance(b);
+  renderBalance();
+}
+
 function renderBalance() {
   const b = loadBalance();
   const today = new Date();
@@ -4353,13 +4429,14 @@ function renderBalance() {
     const endDate = new Date(today.getFullYear(), today.getMonth() + monthsLeft, 1);
     const endStr = `${endDate.getFullYear()}年${endDate.getMonth()+1}月完済見込`;
     return `
-    <div class="entry">
+    <div class="entry" id="loan-item-${l.id}">
       <span class="entry-name">${l.name}</span>
       <span style="font-size:11px;color:var(--text-hint);white-space:nowrap">${l.day}日返済 · ${endStr}</span>
       <div style="text-align:right;white-space:nowrap">
         <div class="entry-amount exp">残 ${fmt(l.balance)}</div>
         <div style="font-size:11px;color:var(--text-muted);font-family:var(--mono)">月 -${fmt(l.monthly)}</div>
       </div>
+      <button class="del-btn" onclick="editLoan(${l.id})" title="編集" style="background:var(--win);border-color:var(--gold);color:var(--gold)">✏</button>
       <button class="del-btn" onclick="deleteLoan(${l.id})">×</button>
     </div>`;
   }).join('') : '';
