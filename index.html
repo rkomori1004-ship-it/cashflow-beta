@@ -733,6 +733,14 @@ input[type=checkbox] { accent-color: #34d399; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 99px; }
 #today-spendable-card > .card, #daily-allowance-card > .card { margin-bottom: 14px !important; }
 
+/* 収支の数字は1行に3つ並べてコンパクトに */
+.metrics { grid-template-columns: repeat(3, 1fr) !important; gap: 8px; margin-bottom: 14px; }
+.metrics .metric { grid-column: auto !important; padding: 10px 12px; }
+.metrics .metric-label { margin-bottom: 2px; }
+.metrics .metric-value { font-size: clamp(14px, 4.2vw, 22px); white-space: nowrap; }
+.ledger-views { margin-bottom: 12px; }
+.tabs .tab { padding: 8px 6px; font-size: 12px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
@@ -774,6 +782,7 @@ input[type=checkbox] { accent-color: #34d399; }
   <div class="tabs">
     <button class="tab active" onclick="switchTab(uiPrefGet('cf-ui-ledger', 'personal'))">📒 収支</button>
     <button class="tab" onclick="switchTab('balance')">🪙 残高・負債</button>
+    <button class="tab" onclick="switchTab('factoring')">💴 ファクタリング</button>
   </div>
 
   <!-- 個人・家計 -->
@@ -841,16 +850,23 @@ input[type=checkbox] { accent-color: #34d399; }
         </label>
       </div>
       </div>
+      <details class="inner-details">
+        <summary>📌 固定費テンプレート（ワンタップで追加）</summary>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">よく使う支出をワンタップで追加できます</div>
+        <div class="entry-list" id="personal-templates"></div>
+      </details>
     </div>
-    <div class="card">
-      <div class="card-title">📌 固定費テンプレート</div>
-      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">よく使う支出をワンタップで追加できます</div>
-      <div class="entry-list" id="personal-templates"></div>
+    <div class="sub-tabs ledger-views" style="grid-template-columns:repeat(2,1fr)">
+      <button class="sub-tab active" data-view="records" onclick="setLedgerView('personal','records')">📋 今月の記録</button>
+      <button class="sub-tab" data-view="analysis" onclick="setLedgerView('personal','analysis')">📊 分析</button>
     </div>
+    <div class="sub-section active" data-view="records">
     <div class="card">
       <div class="card-title">今月の記録</div>
       <div class="entry-list" id="personal-entries"></div>
     </div>
+    </div>
+    <div class="sub-section" data-view="analysis">
     <div class="card">
       <div class="card-title">週次サマリー</div>
       <div id="personal-weekly"></div>
@@ -862,6 +878,7 @@ input[type=checkbox] { accent-color: #34d399; }
         <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>支出</div>
       </div>
       <div class="chart-wrap"><canvas id="personal-chart"></canvas></div>
+    </div>
     </div>
   </div>
 
@@ -877,7 +894,6 @@ input[type=checkbox] { accent-color: #34d399; }
       <button class="nav-btn" onclick="changeMonth('business',1)">›</button>
     </div>
     <div class="metrics" id="business-metrics"></div>
-    <div id="factoring-home-summary"></div>
     <div class="card io-exp" id="business-io-card">
       <div class="card-head">
         <div class="card-title">✏ 記録する</div>
@@ -929,19 +945,58 @@ input[type=checkbox] { accent-color: #34d399; }
         <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:1px solid var(--mp)" onclick="saveAsTemplate('business','expense')" title="固定費テンプレとして保存">📌</button>
       </div>
       </div>
+      <details class="inner-details">
+        <summary>📌 固定費テンプレート（ワンタップで追加）</summary>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">よく使う経費をワンタップで追加できます</div>
+        <div class="entry-list" id="business-templates"></div>
+      </details>
     </div>
+    <div class="sub-tabs ledger-views" style="grid-template-columns:repeat(3,1fr)">
+      <button class="sub-tab active" data-view="records" onclick="setLedgerView('business','records')">📋 記録</button>
+      <button class="sub-tab" data-view="receivables" onclick="setLedgerView('business','receivables')">🧾 売掛金</button>
+      <button class="sub-tab" data-view="analysis" onclick="setLedgerView('business','analysis')">📊 分析</button>
+    </div>
+    <div class="sub-section active" data-view="records">
     <div class="card">
-      <div class="card-title">📌 固定費テンプレート</div>
-      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">よく使う経費をワンタップで追加できます</div>
-      <div class="entry-list" id="business-templates"></div>
+      <div class="card-title">今月の記録</div>
+      <div class="entry-list" id="business-entries"></div>
+      <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+        <button class="csv-btn" onclick="downloadFreeeCSV()">⬇ freee用CSVをダウンロード</button>
+      </div>
     </div>
+    </div>
+    <div class="sub-section" data-view="receivables">
     <div class="card" style="border-color:var(--mp)">
       <div class="card-title" style="color:var(--mp)">📋 売掛金管理</div>
       <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">未請求・請求済（＝まだ入金されていない）案件を、入金予定日が近い順に表示します</p>
       <div id="receivables-list"></div>
       <div id="receivables-total" style="text-align:right;margin-top:10px;font-family:var(--mono);font-size:13px;color:var(--mp)"></div>
     </div>
-    <!-- ファクタリング管理 -->
+    </div>
+    <div class="sub-section" data-view="analysis">
+    <div class="card" style="border-color:var(--gold)">
+      <div class="card-title" style="color:var(--gold)">⚠ 収入依存度・リスク診断</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">直近3ヶ月のクライアント別売上シェアです。特定の1社に偏りすぎていないか確認できます</p>
+      <div id="dependency-chart"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">週次サマリー</div>
+      <div id="business-weekly"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">売上・経費推移（6ヶ月）</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>売上</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>経費</div>
+      </div>
+      <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
+    </div>
+    </div>
+  </div>
+
+  <!-- ファクタリング -->
+  <div id="tab-factoring" class="section">
+    <div id="factoring-home-summary"></div>
     <div class="card" style="border-color:var(--mp)">
       <div class="card-title" style="color:var(--mp)">💴 ファクタリング管理</div>
       <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">ファクタリング会社ごとに案件を管理します。入金済にすると口座残高と売上に自動反映され、返済は「残高・負債」の今月の支払い予定に出ます。</p>
@@ -959,30 +1014,6 @@ input[type=checkbox] { accent-color: #34d399; }
       </details>
     </div>
 
-    <div class="card" style="border-color:var(--gold)">
-      <div class="card-title" style="color:var(--gold)">⚠ 収入依存度・リスク診断</div>
-      <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">直近3ヶ月のクライアント別売上シェアです。特定の1社に偏りすぎていないか確認できます</p>
-      <div id="dependency-chart"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">今月の記録</div>
-      <div class="entry-list" id="business-entries"></div>
-      <div style="display:flex; justify-content:flex-end; margin-top:12px;">
-        <button class="csv-btn" onclick="downloadFreeeCSV()">⬇ freee用CSVをダウンロード</button>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">週次サマリー</div>
-      <div id="business-weekly"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">売上・経費推移（6ヶ月）</div>
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>売上</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>経費</div>
-      </div>
-      <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
-    </div>
   </div>
 
   <!-- 残高・負債 -->
@@ -5019,9 +5050,9 @@ document.addEventListener('click', e => {
   }
 });
 
-// メインタブ: 0=収支（家計・仕事）, 1=残高・負債
+// メインタブ: 0=収支（家計・仕事）, 1=残高・負債, 2=ファクタリング
 function activateTab(name) {
-  const mainTabs = [['personal','business'], ['balance']];
+  const mainTabs = [['personal','business'], ['balance'], ['factoring']];
   // メインタブのみボタンをハイライト
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', !!mainTabs[i] && mainTabs[i].includes(name)));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -5152,6 +5183,17 @@ function setBalanceSub(sub) {
   uiPrefSet('cf-ui-balance-sub', sub);
 }
 
+// 収支タブ下部の「記録／売掛金／分析」切り替え
+function setLedgerView(mode, view) {
+  const sec = document.getElementById(`tab-${mode}`);
+  if (!sec || !sec.querySelector(`.sub-section[data-view="${view}"]`)) view = 'records';
+  sec.querySelectorAll('.ledger-views .sub-tab').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  sec.querySelectorAll('.sub-section[data-view]').forEach(v => v.classList.toggle('active', v.dataset.view === view));
+  uiPrefSet(`cf-ui-view-${mode}`, view);
+  // 非表示の間に描いたグラフは大きさが0なので、表示したら合わせ直す
+  if (view === 'analysis' && typeof charts === 'object') Object.values(charts).forEach(c => { try { c.resize(); } catch (e) {} });
+}
+
 // 「＋追加」で登録フォームを開閉
 function toggleAddPanel(id) {
   const el = document.getElementById(id);
@@ -5163,6 +5205,8 @@ function toggleAddPanel(id) {
 setIoMode('personal', uiPrefGet('cf-ui-io-personal', 'expense'));
 setIoMode('business', uiPrefGet('cf-ui-io-business', 'expense'));
 setBalanceSub(uiPrefGet('cf-ui-balance-sub', 'month'));
+setLedgerView('personal', uiPrefGet('cf-ui-view-personal', 'records'));
+setLedgerView('business', uiPrefGet('cf-ui-view-business', 'records'));
 activateTab(uiPrefGet('cf-ui-ledger', 'personal'));
 
 autoApplyTemplates();
