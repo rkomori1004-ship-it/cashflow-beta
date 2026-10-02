@@ -1531,9 +1531,18 @@ input[type=checkbox] { accent-color: #34d399; }
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin:4px 0 10px;font-size:13px">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="reward-tax" checked onchange="calcReward()" style="width:18px;height:18px">消費税10%を上乗せ</label>
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="reward-wht" checked onchange="calcReward()" style="width:18px;height:18px">源泉徴収あり</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="reward-prepay" onchange="toggleRewardPrepay()" style="width:18px;height:18px">前払い申請する</label>
     </div>
+    <div id="reward-prepay-wrap" class="add-panel" style="margin-bottom:10px">
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:8px">前払い（早払い）の手数料。率で入れると、手数料を引く前の振込額にかけて計算します</div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
+        <div class="modal-field" style="margin:0"><label>前払い手数料</label><input id="reward-prepay-fee" type="number" step="0.1" placeholder="5" oninput="calcReward()"></div>
+        <select id="reward-prepay-unit" onchange="calcReward()" style="width:auto"><option value="rate">％</option><option value="yen">円</option></select>
+      </div>
+    </div>
+    <div class="modal-field"><label>振込予定日</label><input id="reward-paydate" type="date"></div>
     <div id="reward-result" style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:12px;padding:10px 14px"></div>
-    <div style="font-size:10px;color:var(--text-hint);margin-top:8px;line-height:1.6">※ 源泉徴収は税抜の報酬にかかる計算です（請求書で消費税を分けて書いた場合）。経費精算は源泉徴収の対象外として計算しています。取引先・時給・税の設定は次回のために覚えておきます。</div>
+    <div style="font-size:10px;color:var(--text-hint);margin-top:8px;line-height:1.6">※ 源泉徴収は税抜の報酬にかかる計算です（請求書で消費税を分けて書いた場合）。経費精算は源泉徴収の対象外として計算しています。取引先・時給・税の設定と前払い手数料は次回のために覚えておきます。振込予定日は売上の「入金予定日」に入ります。</div>
     <div class="modal-actions">
       <button class="modal-btn cancel" onclick="closeRewardCalc()">閉じる</button>
       <button class="modal-btn primary" id="reward-apply-btn" onclick="applyReward()">売上の入力欄に入れる</button>
@@ -5346,21 +5355,34 @@ function calcWithholding(base) {
 
 function openRewardCalc() {
   const presets = loadRewardPresets();
-  document.getElementById('reward-client-list').innerHTML = Object.keys(presets).filter(k => k !== '__last').map(n => `<option value="${String(n).replace(/"/g, '&quot;')}">`).join('');
+  document.getElementById('reward-client-list').innerHTML = Object.keys(presets).filter(k => !k.startsWith('__')).map(n => `<option value="${String(n).replace(/"/g, '&quot;')}">`).join('');
   const last = presets.__last && presets[presets.__last] ? presets.__last : '';
   document.getElementById('reward-client').value = last;
   document.getElementById('reward-hours').value = '';
   document.getElementById('reward-expense').value = '';
+  document.getElementById('reward-paydate').value = '';
+  document.getElementById('reward-prepay').checked = false;
+  // 前払い手数料は前回の値を入れておく（チェックは毎回オフから）
+  const pf = presets.__prepay || {};
+  document.getElementById('reward-prepay-fee').value = pf.fee || '';
+  document.getElementById('reward-prepay-unit').value = pf.unit || 'rate';
+  toggleRewardPrepay(true);
   applyRewardPreset();
   document.getElementById('reward-modal').classList.add('open');
   setTimeout(() => document.getElementById(last ? 'reward-hours' : 'reward-client').focus(), 50);
+}
+function toggleRewardPrepay(silent) {
+  const on = document.getElementById('reward-prepay').checked;
+  document.getElementById('reward-prepay-wrap').classList.toggle('open', on);
+  if (on && silent !== true) document.getElementById('reward-prepay-fee').focus();
+  if (silent !== true) calcReward();
 }
 function closeRewardCalc() { document.getElementById('reward-modal').classList.remove('open'); }
 
 // 取引先を選んだら、前回の時給・税の設定を入れる
 function applyRewardPreset() {
   const name = document.getElementById('reward-client').value.trim();
-  const p = name !== '__last' ? loadRewardPresets()[name] : null;
+  const p = !name.startsWith('__') ? loadRewardPresets()[name] : null;
   if (p && typeof p === 'object') {
     document.getElementById('reward-rate').value = p.rate || '';
     document.getElementById('reward-tax').checked = p.tax !== false;
@@ -5380,7 +5402,12 @@ function getRewardBreakdown() {
   const tax = document.getElementById('reward-tax').checked ? Math.floor(base * 0.1) : 0;
   const wht = document.getElementById('reward-wht').checked ? calcWithholding(base) : 0;
   const invoice = base + tax + expense;
-  return { rate, hours, expense, base, tax, wht, invoice, net: invoice - wht };
+  const beforeFee = invoice - wht;
+  const prepay = document.getElementById('reward-prepay').checked;
+  const feeVal = parseFloat(document.getElementById('reward-prepay-fee').value) || 0;
+  const feeUnit = document.getElementById('reward-prepay-unit').value;
+  const prepayFee = prepay ? (feeUnit === 'rate' ? Math.floor(beforeFee * feeVal / 100) : Math.round(feeVal)) : 0;
+  return { rate, hours, expense, base, tax, wht, invoice, prepay, feeVal, feeUnit, prepayFee, net: beforeFee - prepayFee };
 }
 
 function calcReward() {
@@ -5394,6 +5421,7 @@ function calcReward() {
     ${r.expense ? row('＋ 経費精算（交通費など）', '+' + fmt(r.expense)) : ''}
     ${row('請求額', fmt(r.invoice))}
     ${r.wht ? row(`− 源泉徴収（${r.base > 1000000 ? '100万円超は20.42%' : '10.21%'}）`, '-' + fmt(r.wht), 'exp') : ''}
+    ${r.prepay ? row(`− 前払い手数料${r.feeUnit === 'rate' ? `（${r.feeVal}%）` : ''}`, '-' + fmt(r.prepayFee), 'exp') : ''}
     ${row('💰 振込額（手取り）', fmt(r.net), 'inc', true)}
   ` : '<div class="empty" style="padding:12px">時給と稼働時間を入れると計算します</div>';
   document.getElementById('reward-apply-btn').disabled = !(r.base > 0);
@@ -5408,11 +5436,14 @@ function applyReward() {
   if (client) {
     presets[client] = { rate: r.rate, tax: document.getElementById('reward-tax').checked, wht: document.getElementById('reward-wht').checked };
     presets.__last = client;
-    saveRewardPresets(presets);
   }
+  if (r.prepay) presets.__prepay = { fee: r.feeVal, unit: r.feeUnit };
+  if (client || r.prepay) saveRewardPresets(presets);
   setIoMode('business', 'income');
-  document.getElementById('b-inc-name').value = `${client || '業務委託'}（${r.hours}時間）`;
+  document.getElementById('b-inc-name').value = `${client || '業務委託'}（${r.hours}時間${r.prepay ? '・前払い' : ''}）`;
   document.getElementById('b-inc-amount').value = r.net;
+  const payDate = document.getElementById('reward-paydate').value;
+  if (payDate) document.getElementById('b-inc-duedate').value = payDate;
   closeRewardCalc();
   const card = document.getElementById('business-io-card');
   if (card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
