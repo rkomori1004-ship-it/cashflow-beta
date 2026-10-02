@@ -739,6 +739,36 @@ input[type=checkbox] { accent-color: #34d399; }
 .metrics .metric-label { margin-bottom: 2px; }
 .metrics .metric-value { font-size: clamp(14px, 4.2vw, 22px); white-space: nowrap; }
 .ledger-views { margin-bottom: 12px; }
+
+/* 毎日の＋／− */
+.pl-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.pl-k { font-size: 11px; color: var(--text-muted); }
+.pl-n { font-family: var(--display); font-size: 20px; font-weight: 700; }
+.pl-s { font-size: 10px; color: var(--text-hint); }
+.pl-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.pl-dow { text-align: center; font-size: 10px; color: var(--text-hint); padding-bottom: 2px; }
+.pl-cell { aspect-ratio: 1 / 1.05; border: none; border-radius: 9px; color: var(--text); font-family: var(--display); cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0; min-width: 0;
+  animation: plPop 0.45s cubic-bezier(.2,1.4,.4,1) both; transition: transform 0.15s, box-shadow 0.2s; }
+.pl-cell:nth-child(7n+1) { animation-delay: 0.02s; } .pl-cell:nth-child(7n+2) { animation-delay: 0.05s; } .pl-cell:nth-child(7n+3) { animation-delay: 0.08s; }
+.pl-cell:nth-child(7n+4) { animation-delay: 0.11s; } .pl-cell:nth-child(7n+5) { animation-delay: 0.14s; } .pl-cell:nth-child(7n+6) { animation-delay: 0.17s; }
+.pl-cell.future { background: transparent; border: 1px dashed rgba(255,255,255,0.12); cursor: default; }
+.pl-cell.sel { box-shadow: 0 0 0 2px #fff; transform: scale(1.06); }
+.pl-d { font-size: 10px; opacity: 0.75; line-height: 1; }
+.pl-v { font-size: clamp(9px, 2.6vw, 12px); font-weight: 600; line-height: 1.1; white-space: nowrap; }
+@keyframes plPop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
+.pl-detail { font-size: 12px; color: var(--text-muted); margin: 10px 0 6px; min-height: 20px; }
+.pl-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10px; color: var(--text-muted); margin-bottom: 12px; }
+.pl-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.pl-weeks-title { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; border-top: 1px solid var(--border); padding-top: 10px; }
+.pl-week { display: grid; grid-template-columns: 74px 1fr 92px; gap: 8px; align-items: center; font-size: 11px; padding: 3px 0; }
+.pl-wlabel { color: var(--text-muted); white-space: nowrap; }
+.pl-wtrack { position: relative; height: 12px; }
+.pl-wmid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: rgba(255,255,255,0.25); }
+.pl-wbar { position: absolute; top: 0; bottom: 0; border-radius: 4px; animation: plGrow 0.7s cubic-bezier(.2,1,.3,1) both; }
+.pl-wbar[style*="left:50%"] { transform-origin: left; } .pl-wbar[style*="right:50%"] { transform-origin: right; }
+@keyframes plGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.pl-wval { text-align: right; font-family: var(--display); font-weight: 600; white-space: nowrap; }
 .tabs .tab { padding: 8px 6px; font-size: 12px; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -868,6 +898,11 @@ input[type=checkbox] { accent-color: #34d399; }
     </div>
     <div class="sub-section" data-view="analysis">
     <div class="card">
+      <div class="card-title" style="margin-bottom:4px">📅 毎日の＋／−</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">今月の収入を日数で割った「1日あたりの収入」と、その日の支出を比べます</div>
+      <div class="daily-pl" data-mode="personal"></div>
+    </div>
+    <div class="card">
       <div class="card-title">週次サマリー</div>
       <div id="personal-weekly"></div>
     </div>
@@ -904,6 +939,7 @@ input[type=checkbox] { accent-color: #34d399; }
         <button class="io-btn exp active" data-io="expense" onclick="setIoMode('business','expense')">💸 経費</button>
       </div>
       <div class="io-form" data-io="income">
+      <button class="add-toggle" onclick="openRewardCalc()" style="width:100%;margin-bottom:12px;padding:9px;color:#67e8f9;border-color:rgba(103,232,249,0.45)">🧮 時給 × 時間から報酬を計算する</button>
       <div class="form-grid biz-grid-acc">
         <div class="field"><label>発生日</label><input id="b-inc-date" type="date" onkeydown="if(event.key==='Enter')addEntry('business','income')"></div>
         <div class="field"><label>クライアント / 案件名</label><input id="b-inc-name" list="b-inc-namelist" placeholder="案件名" onkeydown="if(event.key==='Enter')addEntry('business','income')"></div>
@@ -974,6 +1010,11 @@ input[type=checkbox] { accent-color: #34d399; }
     </div>
     </div>
     <div class="sub-section" data-view="analysis">
+    <div class="card">
+      <div class="card-title" style="margin-bottom:4px">📅 毎日の＋／−</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">今月の収入を日数で割った「1日あたりの収入」と、その日の支出を比べます</div>
+      <div class="daily-pl" data-mode="business"></div>
+    </div>
     <div class="card" style="border-color:var(--gold)">
       <div class="card-title" style="color:var(--gold)">⚠ 収入依存度・リスク診断</div>
       <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">直近3ヶ月のクライアント別売上シェアです。特定の1社に偏りすぎていないか確認できます</p>
@@ -1477,6 +1518,37 @@ input[type=checkbox] { accent-color: #34d399; }
 </div>
 
 
+
+<div class="modal-overlay" id="reward-modal" onclick="if(event.target===this)closeRewardCalc()">
+  <div class="modal">
+    <div class="modal-title">🧮 業務委託の報酬計算</div>
+    <div class="modal-field"><label>取引先</label><input id="reward-client" list="reward-client-list" placeholder="株式会社〇〇" oninput="applyRewardPreset()"><datalist id="reward-client-list"></datalist></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="modal-field"><label>時給（円・税抜）</label><input id="reward-rate" type="number" placeholder="3000" oninput="calcReward()"></div>
+      <div class="modal-field"><label>稼働時間</label><input id="reward-hours" type="number" step="0.25" placeholder="80" oninput="calcReward()"></div>
+    </div>
+    <div class="modal-field"><label>経費精算（交通費など・任意）</label><input id="reward-expense" type="number" placeholder="0" oninput="calcReward()"></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin:4px 0 10px;font-size:13px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="reward-tax" checked onchange="calcReward()" style="width:18px;height:18px">消費税10%を上乗せ</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="reward-wht" checked onchange="calcReward()" style="width:18px;height:18px">源泉徴収あり</label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="reward-prepay" onchange="toggleRewardPrepay()" style="width:18px;height:18px">前払い申請する</label>
+    </div>
+    <div id="reward-prepay-wrap" class="add-panel" style="margin-bottom:10px">
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:8px">前払い（早払い）の手数料。率で入れると、手数料を引く前の振込額にかけて計算します</div>
+      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">
+        <div class="modal-field" style="margin:0"><label>前払い手数料</label><input id="reward-prepay-fee" type="number" step="0.1" placeholder="5" oninput="calcReward()"></div>
+        <select id="reward-prepay-unit" onchange="calcReward()" style="width:auto"><option value="rate">％</option><option value="yen">円</option></select>
+      </div>
+    </div>
+    <div class="modal-field"><label>振込予定日</label><input id="reward-paydate" type="date"></div>
+    <div id="reward-result" style="background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:12px;padding:10px 14px"></div>
+    <div style="font-size:10px;color:var(--text-hint);margin-top:8px;line-height:1.6">※ 源泉徴収は税抜の報酬にかかる計算です（請求書で消費税を分けて書いた場合）。経費精算は源泉徴収の対象外として計算しています。取引先・時給・税の設定と前払い手数料は次回のために覚えておきます。振込予定日は売上の「入金予定日」に入ります。</div>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" onclick="closeRewardCalc()">閉じる</button>
+      <button class="modal-btn primary" id="reward-apply-btn" onclick="applyReward()">売上の入力欄に入れる</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="edit-modal" onclick="if(event.target===this)closeModal()">
   <div class="modal">
@@ -5012,6 +5084,7 @@ function gatherAllLocalData() {
     rewards: JSON.parse(localStorage.getItem('cf-rewards-v1') || 'null'),
     factoring: JSON.parse(localStorage.getItem('cf-factoring-v1') || 'null'),
     duePaid: JSON.parse(localStorage.getItem('cf-due-paid-v1') || 'null'),
+    rewardPresets: JSON.parse(localStorage.getItem('cf-reward-presets-v1') || 'null'),
     // 「毎回その場の現在時刻」ではなく、実際にローカルデータが最後に変更された時刻を使う
     updatedAt: parseInt(localStorage.getItem('cf-local-updated-at') || '0') || Date.now()
   };
@@ -5031,6 +5104,7 @@ function applyAllLocalData(data) {
   if (data.rewards) localStorage.setItem('cf-rewards-v1', JSON.stringify(data.rewards));
   if (data.factoring) localStorage.setItem('cf-factoring-v1', JSON.stringify(data.factoring));
   if (data.duePaid) localStorage.setItem('cf-due-paid-v1', JSON.stringify(data.duePaid));
+  if (data.rewardPresets) localStorage.setItem('cf-reward-presets-v1', JSON.stringify(data.rewardPresets));
   window.__isApplyingRemoteSync = false;
   // 反映した時点＝クラウドの更新時刻を、ローカルの基準時刻としてそのまま採用
   if (data.updatedAt) localStorage.setItem('cf-local-updated-at', String(data.updatedAt));
@@ -5115,6 +5189,7 @@ function renderAll() {
   if (typeof renderFactoringManagement === 'function') renderFactoringManagement();
   if (typeof renderFactorySummary === 'function') renderFactorySummary();
   renderTodaySpendable();
+  renderDailyPL();
   if (typeof animateMetricValues === 'function') animateMetricValues();
 }
 
@@ -5266,6 +5341,205 @@ function setBalanceSub(sub) {
   document.querySelectorAll('#tab-balance .sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
   document.querySelectorAll('#tab-balance .sub-section').forEach(sec => sec.classList.toggle('active', sec.dataset.sub === sub));
   uiPrefSet('cf-ui-balance-sub', sub);
+}
+
+// ---- 業務委託の報酬計算（時給 × 時間） ----
+function loadRewardPresets() { try { return JSON.parse(localStorage.getItem('cf-reward-presets-v1')) || {}; } catch (e) { return {}; } }
+function saveRewardPresets(p) { localStorage.setItem('cf-reward-presets-v1', JSON.stringify(p)); }
+
+// 源泉徴収税額（報酬100万円まで10.21%、超えた分は20.42%。1円未満切り捨て）
+function calcWithholding(base) {
+  if (base <= 0) return 0;
+  return base <= 1000000 ? Math.floor(base * 0.1021) : Math.floor((base - 1000000) * 0.2042) + 102100;
+}
+
+function openRewardCalc() {
+  const presets = loadRewardPresets();
+  document.getElementById('reward-client-list').innerHTML = Object.keys(presets).filter(k => !k.startsWith('__')).map(n => `<option value="${String(n).replace(/"/g, '&quot;')}">`).join('');
+  const last = presets.__last && presets[presets.__last] ? presets.__last : '';
+  document.getElementById('reward-client').value = last;
+  document.getElementById('reward-hours').value = '';
+  document.getElementById('reward-expense').value = '';
+  document.getElementById('reward-paydate').value = '';
+  document.getElementById('reward-prepay').checked = false;
+  // 前払い手数料は前回の値を入れておく（チェックは毎回オフから）
+  const pf = presets.__prepay || {};
+  document.getElementById('reward-prepay-fee').value = pf.fee || '';
+  document.getElementById('reward-prepay-unit').value = pf.unit || 'rate';
+  toggleRewardPrepay(true);
+  applyRewardPreset();
+  document.getElementById('reward-modal').classList.add('open');
+  setTimeout(() => document.getElementById(last ? 'reward-hours' : 'reward-client').focus(), 50);
+}
+function toggleRewardPrepay(silent) {
+  const on = document.getElementById('reward-prepay').checked;
+  document.getElementById('reward-prepay-wrap').classList.toggle('open', on);
+  if (on && silent !== true) document.getElementById('reward-prepay-fee').focus();
+  if (silent !== true) calcReward();
+}
+function closeRewardCalc() { document.getElementById('reward-modal').classList.remove('open'); }
+
+// 取引先を選んだら、前回の時給・税の設定を入れる
+function applyRewardPreset() {
+  const name = document.getElementById('reward-client').value.trim();
+  const p = !name.startsWith('__') ? loadRewardPresets()[name] : null;
+  if (p && typeof p === 'object') {
+    document.getElementById('reward-rate').value = p.rate || '';
+    document.getElementById('reward-tax').checked = p.tax !== false;
+    document.getElementById('reward-wht').checked = p.wht !== false;
+  } else if (!document.getElementById('reward-client').value.trim()) {
+    document.getElementById('reward-tax').checked = true;
+    document.getElementById('reward-wht').checked = true;
+  }
+  calcReward();
+}
+
+function getRewardBreakdown() {
+  const rate = parseFloat(document.getElementById('reward-rate').value) || 0;
+  const hours = parseFloat(document.getElementById('reward-hours').value) || 0;
+  const expense = parseFloat(document.getElementById('reward-expense').value) || 0;
+  const base = Math.floor(rate * hours);
+  const tax = document.getElementById('reward-tax').checked ? Math.floor(base * 0.1) : 0;
+  const wht = document.getElementById('reward-wht').checked ? calcWithholding(base) : 0;
+  const invoice = base + tax + expense;
+  const beforeFee = invoice - wht;
+  const prepay = document.getElementById('reward-prepay').checked;
+  const feeVal = parseFloat(document.getElementById('reward-prepay-fee').value) || 0;
+  const feeUnit = document.getElementById('reward-prepay-unit').value;
+  const prepayFee = prepay ? (feeUnit === 'rate' ? Math.floor(beforeFee * feeVal / 100) : Math.round(feeVal)) : 0;
+  return { rate, hours, expense, base, tax, wht, invoice, prepay, feeVal, feeUnit, prepayFee, net: beforeFee - prepayFee };
+}
+
+function calcReward() {
+  const r = getRewardBreakdown();
+  const row = (label, v, cls = '', strong = false) => `<div style="display:flex;justify-content:space-between;padding:4px 0;${strong ? 'border-top:1px solid var(--border);margin-top:4px;padding-top:8px' : ''}">
+    <span style="color:${strong ? 'var(--text)' : 'var(--text-muted)'};font-size:${strong ? 13 : 12}px">${label}</span>
+    <span class="${cls}" style="font-family:var(--mono);font-weight:${strong ? 700 : 500};font-size:${strong ? 18 : 13}px;white-space:nowrap">${v}</span></div>`;
+  document.getElementById('reward-result').innerHTML = r.base > 0 ? `
+    ${row(`報酬（${r.rate.toLocaleString('ja-JP')}円 × ${r.hours}時間）`, fmt(r.base))}
+    ${r.tax ? row('＋ 消費税（10%）', '+' + fmt(r.tax)) : ''}
+    ${r.expense ? row('＋ 経費精算（交通費など）', '+' + fmt(r.expense)) : ''}
+    ${row('請求額', fmt(r.invoice))}
+    ${r.wht ? row(`− 源泉徴収（${r.base > 1000000 ? '100万円超は20.42%' : '10.21%'}）`, '-' + fmt(r.wht), 'exp') : ''}
+    ${r.prepay ? row(`− 前払い手数料${r.feeUnit === 'rate' ? `（${r.feeVal}%）` : ''}`, '-' + fmt(r.prepayFee), 'exp') : ''}
+    ${row('💰 振込額（手取り）', fmt(r.net), 'inc', true)}
+  ` : '<div class="empty" style="padding:12px">時給と稼働時間を入れると計算します</div>';
+  document.getElementById('reward-apply-btn').disabled = !(r.base > 0);
+}
+
+// 売上の入力欄に入れる（ステータス・入金予定日・入金先はいつもどおり選んで記録）
+function applyReward() {
+  const r = getRewardBreakdown();
+  if (!(r.base > 0)) return;
+  const client = document.getElementById('reward-client').value.trim();
+  const presets = loadRewardPresets();
+  if (client) {
+    presets[client] = { rate: r.rate, tax: document.getElementById('reward-tax').checked, wht: document.getElementById('reward-wht').checked };
+    presets.__last = client;
+  }
+  if (r.prepay) presets.__prepay = { fee: r.feeVal, unit: r.feeUnit };
+  if (client || r.prepay) saveRewardPresets(presets);
+  setIoMode('business', 'income');
+  document.getElementById('b-inc-name').value = `${client || '業務委託'}（${r.hours}時間${r.prepay ? '・前払い' : ''}）`;
+  document.getElementById('b-inc-amount').value = r.net;
+  const payDate = document.getElementById('reward-paydate').value;
+  if (payDate) document.getElementById('b-inc-duedate').value = payDate;
+  closeRewardCalc();
+  const card = document.getElementById('business-io-card');
+  if (card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// ---- 毎日の＋／−（今月の収入を日数で均等に割り、その日の支出と比べる） ----
+const PL_POS = '#0891b2', PL_NEG = '#e11d48';
+function fmtShort(n) {
+  const a = Math.abs(n), sign = n > 0 ? '+' : n < 0 ? '−' : '±';
+  if (a >= 100000) return sign + Math.round(a / 10000) + '万';
+  if (a >= 10000) return sign + (a / 10000).toFixed(1).replace(/\.0$/, '') + '万';
+  if (a >= 1000) return sign + (a / 1000).toFixed(1).replace(/\.0$/, '') + '千';
+  return sign + Math.round(a);
+}
+
+function getDailyPL(year, month) {
+  const days = new Date(year, month + 1, 0).getDate();
+  const all = [...getEntries('personal', year, month), ...getEntries('business', year, month)];
+  const income = all.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+  const perDay = income / days;
+  const ym = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const exp = {}; let undated = 0;
+  all.filter(e => e.type === 'expense').forEach(e => {
+    if (e.date && e.date.slice(0, 7) === ym) { const d = parseInt(e.date.slice(8, 10)); exp[d] = (exp[d] || 0) + e.amount; }
+    else undated += e.amount;
+  });
+  const todayKey = getTodayKey();
+  const list = [];
+  for (let d = 1; d <= days; d++) {
+    const key = `${ym}-${String(d).padStart(2, '0')}`;
+    const spent = exp[d] || 0;
+    list.push({ d, key, dow: new Date(year, month, d).getDay(), spent, net: Math.round(perDay - spent), future: key > todayKey });
+  }
+  return { days, income, perDay, list, undated };
+}
+
+function renderDailyPL() {
+  document.querySelectorAll('.daily-pl').forEach(el => {
+    const mode = el.dataset.mode;
+    const { year, month } = state[mode];
+    const pl = getDailyPL(year, month);
+    const past = pl.list.filter(x => !x.future);
+    const maxAbs = Math.max(1, ...past.map(x => Math.abs(x.net)));
+    const plus = past.filter(x => x.net > 0).length, minus = past.filter(x => x.net < 0).length;
+    const total = past.reduce((s, x) => s + x.net, 0);
+    const dows = ['日', '月', '火', '水', '木', '金', '土'];
+    const lead = (pl.list[0].dow + 6) % 7; // 月曜始まり
+    const cell = x => {
+      if (x.future) return `<div class="pl-cell future" data-key="${x.key}" title="${month + 1}/${x.d} これから"><span class="pl-d">${x.d}</span></div>`;
+      const t = Math.min(1, Math.abs(x.net) / maxAbs);
+      const bg = x.net === 0 ? 'rgba(255,255,255,0.05)' : `${x.net > 0 ? PL_POS : PL_NEG}${Math.round((0.22 + 0.68 * t) * 255).toString(16).padStart(2, '0')}`;
+      return `<button class="pl-cell" style="background:${bg}" data-key="${x.key}" onclick="showDailyPLDetail(this,'${mode}',${x.d})" title="${month + 1}/${x.d} ${x.net >= 0 ? '+' : '-'}${fmt(Math.abs(x.net))}">
+        <span class="pl-d">${x.d}</span><span class="pl-v">${fmtShort(x.net)}</span></button>`;
+    };
+    // 週ごと（月曜始まり、月の範囲内）
+    const weeks = []; let cur = null;
+    pl.list.forEach(x => {
+      if (!cur || x.dow === 1) { cur = { from: x.d, to: x.d, net: 0, hasPast: false }; weeks.push(cur); }
+      cur.to = x.d;
+      if (!x.future) { cur.net += x.net; cur.hasPast = true; }
+    });
+    const wMax = Math.max(1, ...weeks.filter(w => w.hasPast).map(w => Math.abs(w.net)));
+    const weekRows = weeks.map((w, i) => {
+      const pct = w.hasPast ? Math.max(2, Math.abs(w.net) / wMax * 50) : 0;
+      return `<div class="pl-week" title="${month + 1}/${w.from}〜${month + 1}/${w.to}">
+        <span class="pl-wlabel">${month + 1}/${w.from}〜${w.to}</span>
+        <span class="pl-wtrack"><span class="pl-wbar" style="${w.net >= 0 ? 'left:50%' : `right:50%`};width:${pct}%;background:${w.net >= 0 ? PL_POS : PL_NEG};animation-delay:${i * 60}ms"></span><span class="pl-wmid"></span></span>
+        <span class="pl-wval">${w.hasPast ? (w.net >= 0 ? '+' : '−') + fmt(Math.abs(w.net)) : 'これから'}</span>
+      </div>`;
+    }).join('');
+    el.innerHTML = `
+      <div class="pl-summary">
+        <div><div class="pl-k">1日あたりの収入</div><div class="pl-n">${fmt(pl.perDay)}</div><div class="pl-s">今月の収入 ${fmt(pl.income)} ÷ ${pl.days}日</div></div>
+        <div><div class="pl-k">今日までの合計</div><div class="pl-n" style="color:${total >= 0 ? '#67e8f9' : '#fda4af'}">${total >= 0 ? '+' : '−'}${fmt(Math.abs(total))}</div><div class="pl-s">＋の日 ${plus}日 ／ −の日 ${minus}日</div></div>
+      </div>
+      <div class="pl-grid">
+        ${['月', '火', '水', '木', '金', '土', '日'].map(w => `<div class="pl-dow">${w}</div>`).join('')}
+        ${'<div></div>'.repeat(lead)}${pl.list.map(cell).join('')}
+      </div>
+      <div class="pl-detail" id="pl-detail-${mode}">日付をタップすると内訳が見られます</div>
+      <div class="pl-legend"><span><i style="background:${PL_POS}"></i>＋ 収入の日割りより使わなかった</span><span><i style="background:${PL_NEG}"></i>− 使いすぎた</span></div>
+      <div class="pl-weeks-title">週ごとの合計</div>
+      ${weekRows}
+      ${pl.undated ? `<div class="pl-s" style="margin-top:8px">※ 日付のない支出 ${fmt(pl.undated)} は日ごとの計算に含めていません</div>` : ''}
+    `;
+  });
+}
+
+function showDailyPLDetail(btn, mode, d) {
+  const { year, month } = state[mode];
+  const pl = getDailyPL(year, month);
+  const x = pl.list[d - 1];
+  btn.parentElement.querySelectorAll('.pl-cell.sel').forEach(c => c.classList.remove('sel'));
+  btn.classList.add('sel');
+  const el = document.getElementById(`pl-detail-${mode}`);
+  el.innerHTML = `<b>${month + 1}月${d}日（${['日', '月', '火', '水', '木', '金', '土'][x.dow]}）</b>　収入の日割り ${fmt(pl.perDay)} − 支出 ${fmt(x.spent)} ＝ <b style="color:${x.net >= 0 ? '#67e8f9' : '#fda4af'}">${x.net >= 0 ? '+' : '−'}${fmt(Math.abs(x.net))}</b>`;
 }
 
 // 収支タブ下部の「記録／売掛金／分析」切り替え
@@ -5441,7 +5715,7 @@ if ('serviceWorker' in navigator) {
   }
 
   // localStorageへの書き込みを監視して自動的にクラウド同期をスケジュール
-  const SYNCED_KEYS = ['cf-manager-v1', 'cf-balance-v1', 'cf-budget-v1', 'cf-level-v1', 'cf-unpaid-v1', 'cf-templates-v1', 'cf-goals-v1', 'cf-allocation-v1', 'cf-rewards-v1', 'cf-factoring-v1', 'cf-factoring-companies-v1', 'cf-factoring-cases-v1', 'cf-savings-goal-v1', 'cf-due-paid-v1'];
+  const SYNCED_KEYS = ['cf-manager-v1', 'cf-balance-v1', 'cf-budget-v1', 'cf-level-v1', 'cf-unpaid-v1', 'cf-templates-v1', 'cf-goals-v1', 'cf-allocation-v1', 'cf-rewards-v1', 'cf-factoring-v1', 'cf-factoring-companies-v1', 'cf-factoring-cases-v1', 'cf-savings-goal-v1', 'cf-due-paid-v1', 'cf-reward-presets-v1'];
   const origSetItem = localStorage.setItem.bind(localStorage);
   localStorage.setItem = function(key, value) {
     origSetItem(key, value);
