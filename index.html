@@ -306,7 +306,7 @@ header {
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
-  flex-shrink: 0; padding: 8px 14px;
+  flex: 1 0 auto; padding: 8px 14px;
   border: none; border-right: 2px solid var(--border);
   font-family: 'DotGothic16', monospace;
   font-size: 12px; cursor: pointer;
@@ -649,13 +649,16 @@ select option { background: #0d0d35; }
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="switchTab('personal')">🏠 家計</button>
-    <button class="tab" onclick="switchTab('business')">💼 仕事</button>
+    <button class="tab active" onclick="switchTab(uiPrefGet('cf-ui-ledger', 'personal'))">📒 収支</button>
     <button class="tab" onclick="switchTab('balance')">🪙 残高・負債</button>
   </div>
 
   <!-- 個人・家計 -->
   <div id="tab-personal" class="section active">
+    <div class="sub-tabs">
+      <button class="sub-tab active" onclick="switchTab('personal')">🏠 家計</button>
+      <button class="sub-tab" onclick="switchTab('business')">💼 仕事</button>
+    </div>
     <div class="month-nav">
       <button class="nav-btn" onclick="changeMonth('personal',-1)">‹</button>
       <div class="month-label" id="personal-month-label"></div>
@@ -670,8 +673,8 @@ select option { background: #0d0d35; }
         <button class="add-toggle" style="color:var(--mp);border-color:var(--mp)" onclick="openCsvImportModal()">📥 CSVから取り込む</button>
       </div>
       <div class="io-toggle">
-        <button class="io-btn inc" data-io="income" onclick="setIoMode('personal','income')">＋ 入ってくる<br><small>収入</small></button>
-        <button class="io-btn exp active" data-io="expense" onclick="setIoMode('personal','expense')">− 出ていく<br><small>支出</small></button>
+        <button class="io-btn inc" data-io="income" onclick="setIoMode('personal','income')">💰 収入</button>
+        <button class="io-btn exp active" data-io="expense" onclick="setIoMode('personal','expense')">💸 支出</button>
       </div>
       <div class="io-form" data-io="income">
       <div class="form-grid exp-acc-grid">
@@ -687,7 +690,7 @@ select option { background: #0d0d35; }
         <div class="field"><label>入金先</label>
           <select id="p-inc-account"></select>
         </div>
-        <button class="add-btn green io-submit" onclick="addEntry('personal','income')" title="収入を記録">＋ 収入を記録</button>
+        <button class="add-btn green io-submit" onclick="addEntry('personal','income')" title="収入を記録">収入を記録する</button>
       </div>
       </div>
       <div class="io-form active" data-io="expense">
@@ -705,7 +708,7 @@ select option { background: #0d0d35; }
           <select id="p-exp-account"></select>
         </div>
         <div class="field checkbox-field"><label>支払済</label><input type="checkbox" id="p-exp-paid" checked></div>
-        <button class="add-btn red io-submit" onclick="addEntry('personal','expense')" title="支出を記録">− 支出を記録</button>
+        <button class="add-btn red io-submit" onclick="addEntry('personal','expense')" title="支出を記録">支出を記録する</button>
         <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="saveAsTemplate('personal','expense')" title="固定費テンプレとして保存">📌</button>
       </div>
       <div id="alloc-hint" style="display:none;margin-top:10px;padding:10px 12px;background:#0d0d35;border:2px solid var(--mp)">
@@ -741,6 +744,10 @@ select option { background: #0d0d35; }
 
   <!-- フリーランス -->
   <div id="tab-business" class="section">
+    <div class="sub-tabs">
+      <button class="sub-tab" onclick="switchTab('personal')">🏠 家計</button>
+      <button class="sub-tab active" onclick="switchTab('business')">💼 仕事</button>
+    </div>
     <div class="month-nav">
       <button class="nav-btn" onclick="changeMonth('business',-1)">‹</button>
       <div class="month-label" id="business-month-label"></div>
@@ -754,8 +761,8 @@ select option { background: #0d0d35; }
         <button class="add-toggle" style="color:var(--mp);border-color:var(--mp)" onclick="openCsvImportModal()">📥 CSVから取り込む</button>
       </div>
       <div class="io-toggle">
-        <button class="io-btn inc" data-io="income" onclick="setIoMode('business','income')">＋ 入ってくる<br><small>売上</small></button>
-        <button class="io-btn exp active" data-io="expense" onclick="setIoMode('business','expense')">− 出ていく<br><small>経費</small></button>
+        <button class="io-btn inc" data-io="income" onclick="setIoMode('business','income')">💰 売上</button>
+        <button class="io-btn exp active" data-io="expense" onclick="setIoMode('business','expense')">💸 経費</button>
       </div>
       <div class="io-form" data-io="income">
       <div class="form-grid biz-grid-acc">
@@ -777,7 +784,7 @@ select option { background: #0d0d35; }
         <div class="field"><label>入金先</label>
           <select id="b-inc-account"></select>
         </div>
-        <button class="add-btn green io-submit" onclick="addEntry('business','income')" title="売上を記録">＋ 売上を記録</button>
+        <button class="add-btn green io-submit" onclick="addEntry('business','income')" title="売上を記録">売上を記録する</button>
       </div>
       </div>
       <div class="io-form active" data-io="expense">
@@ -795,7 +802,7 @@ select option { background: #0d0d35; }
           <select id="b-exp-account"></select>
         </div>
         <div class="field checkbox-field"><label>支払済</label><input type="checkbox" id="b-exp-paid" checked></div>
-        <button class="add-btn red io-submit" onclick="addEntry('business','expense')" title="経費を記録">− 経費を記録</button>
+        <button class="add-btn red io-submit" onclick="addEntry('business','expense')" title="経費を記録">経費を記録する</button>
         <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="saveAsTemplate('business','expense')" title="固定費テンプレとして保存">📌</button>
       </div>
       </div>
@@ -4914,13 +4921,19 @@ document.addEventListener('click', e => {
   }
 });
 
-function switchTab(name) {
-  const mainTabs = ['personal','business','balance'];
-  const allTabs = ['personal','business','balance','overview','annual','budget','backup','advisor'];
+// メインタブ: 0=収支（家計・仕事）, 1=残高・負債
+function activateTab(name) {
+  const mainTabs = [['personal','business'], ['balance']];
   // メインタブのみボタンをハイライト
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', mainTabs[i]===name));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', !!mainTabs[i] && mainTabs[i].includes(name)));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.getElementById(`tab-${name}`).classList.add('active');
+  // 収支タブで最後に見ていた方（家計／仕事）を覚えておく
+  if (name === 'personal' || name === 'business') uiPrefSet('cf-ui-ledger', name);
+}
+
+function switchTab(name) {
+  activateTab(name);
   renderAll();
   if (name === 'advisor' && window.renderAdvisorTab) window.renderAdvisorTab();
 }
@@ -4929,7 +4942,7 @@ function switchTab(name) {
 function uiPrefGet(key, def) { try { return localStorage.getItem(key) || def; } catch(e) { return def; } }
 function uiPrefSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
 
-// 入ってくる／出ていく の切り替え
+// 収入（売上）／支出（経費）の切り替え
 function setIoMode(mode, io) {
   const card = document.getElementById(`${mode}-io-card`);
   if (!card) return;
@@ -4958,6 +4971,7 @@ function toggleAddPanel(id) {
 setIoMode('personal', uiPrefGet('cf-ui-io-personal', 'expense'));
 setIoMode('business', uiPrefGet('cf-ui-io-business', 'expense'));
 setBalanceSub(uiPrefGet('cf-ui-balance-sub', 'month'));
+activateTab(uiPrefGet('cf-ui-ledger', 'personal'));
 
 autoApplyTemplates();
 renderAll();
