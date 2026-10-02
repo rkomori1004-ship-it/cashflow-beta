@@ -799,6 +799,13 @@ select option { background: #0d0d35; }
       <div id="due-card-body"></div>
     </div>
 
+    <!-- カード別 月ごとの利用額 -->
+    <div id="card-monthly-card" class="card" style="display:none">
+      <div class="card-title">💳 カード別 月ごとの利用額</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">※ 利用した月の集計で、引落は翌月以降です</div>
+      <div id="card-monthly-body" style="overflow-x:auto"></div>
+    </div>
+
     <!-- 月末CF予測ヒーロー -->
     <div id="cf-forecast-card" class="card" style="border-color:var(--green);background:linear-gradient(135deg,#001a0d 0%,#0a0a2a 100%)">
       <div class="card-title">今月の手元残高予測</div>
@@ -4506,6 +4513,65 @@ function renderBalance() {
   renderFactoringList();
   renderFactoringComparison();
   renderDueCard();
+  renderCardMonthly();
+}
+
+// ---- カード別 月ごとの利用額 ----
+function renderCardMonthly() {
+  const card = document.getElementById('card-monthly-card');
+  const el = document.getElementById('card-monthly-body');
+  if (!card || !el) return;
+  const cards = loadBalance().cards || [];
+  if (!cards.length) { card.style.display = 'none'; el.innerHTML = ''; return; }
+  card.style.display = '';
+
+  // 直近6か月（今月が先頭）
+  const today = new Date();
+  const months = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  const thisMonth = months[0];
+
+  // 月→カードID→金額（日付がない記録は保存先の月で数える。キーの月は0始まり）
+  const sums = {};
+  ['personal', 'business'].forEach(mode => {
+    Object.entries(state[mode].entries || {}).forEach(([bucketKey, arr]) => {
+      const [by, bm] = bucketKey.split('-').map(Number);
+      const bucketMonth = `${by}-${String(bm + 1).padStart(2, '0')}`;
+      (arr || []).forEach(e => {
+        if (e.type !== 'expense' || !e.cardId) return;
+        const ym = e.date ? e.date.slice(0, 7) : bucketMonth;
+        if (!months.includes(ym)) return;
+        sums[ym] = sums[ym] || {};
+        sums[ym][e.cardId] = (sums[ym][e.cardId] || 0) + e.amount;
+      });
+    });
+  });
+
+  const cell = v => v ? fmt(v) : '-';
+  const th = 'padding:6px 4px;font-size:10px;color:var(--text-muted);font-weight:normal;white-space:nowrap;text-align:right;border-bottom:2px solid var(--border)';
+  const td = 'padding:6px 4px;font-family:var(--mono);white-space:nowrap;text-align:right';
+  const rows = months.map(ym => {
+    const row = sums[ym] || {};
+    const total = cards.reduce((s, c) => s + (row[c.id] || 0), 0);
+    const isNow = ym === thisMonth;
+    return `<tr style="border-bottom:1px solid var(--border);${isNow ? 'background:#1a1500' : ''}">
+      <td style="padding:6px 4px;white-space:nowrap;${isNow ? 'color:var(--gold)' : ''}">${ym.slice(0, 4)}/${parseInt(ym.slice(5, 7))}${isNow ? '<br><span style="font-size:10px">（今月）</span>' : ''}</td>
+      ${cards.map(c => `<td style="${td};color:${row[c.id] ? 'var(--red)' : 'var(--text-hint)'}">${cell(row[c.id])}</td>`).join('')}
+      <td style="${td};color:${total ? 'var(--gold)' : 'var(--text-hint)'}">${cell(total)}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr>
+        <th style="${th};text-align:left">月</th>
+        ${cards.map(c => `<th style="${th}">💳 ${String(c.name).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))}</th>`).join('')}
+        <th style="${th};color:var(--gold)">合計</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
 }
 
 // ---- 今月の支払い予定 ----
