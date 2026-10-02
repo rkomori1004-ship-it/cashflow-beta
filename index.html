@@ -1100,6 +1100,11 @@ input[type=checkbox] { accent-color: #34d399; }
         </div>
         <div class="entry-list" id="transfer-list"></div>
       </details>
+      <details class="inner-details">
+        <summary>🧮 残高調整の履歴（✏ で実際の残高に合わせた記録）</summary>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">記録漏れや利息などで実際の残高とずれたときに、口座の ✏ から合わせられます。収支には含まれません。</div>
+        <div class="entry-list" id="adjust-list"></div>
+      </details>
     </div>
 
     <!-- クレカ（月ごとの利用額を内包） -->
@@ -4600,6 +4605,73 @@ function saveLoanEdit(id) {
   renderBalance();
 }
 
+// ---- 口座の残高調整 ----
+function editAccount(id) {
+  const b = loadBalance();
+  const a = b.accounts.find(x => x.id === id);
+  const el = document.getElementById(`acc-item-${id}`);
+  if (!a || !el) return;
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field"><label>口座名</label><input type="text" id="aedit-name-${id}" value="${String(a.name).replace(/"/g, '&quot;')}"></div>
+        <div class="field"><label>実際の残高（円）</label><input type="number" id="aedit-balance-${id}" value="${a.balance}" oninput="previewAccountAdjust(${id})" onkeydown="if(event.key==='Enter')saveAccountEdit(${id})"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <span id="aedit-diff-${id}" style="font-size:12px;color:var(--text-hint)">通帳やアプリの残高を入れると、差額だけ調整します</span>
+        <div style="display:flex;gap:6px">
+          <button class="add-btn green" onclick="saveAccountEdit(${id})" style="height:32px;width:auto;padding:0 14px;font-size:13px;margin-top:0">保存</button>
+          <button class="del-btn" onclick="renderBalance()" title="キャンセル">×</button>
+        </div>
+      </div>
+    </div>`;
+  const inp = document.getElementById(`aedit-balance-${id}`);
+  inp.focus(); inp.select();
+}
+
+function previewAccountAdjust(id) {
+  const a = loadBalance().accounts.find(x => x.id === id);
+  const v = parseFloat(document.getElementById(`aedit-balance-${id}`).value);
+  const el = document.getElementById(`aedit-diff-${id}`);
+  if (!a || !el) return;
+  if (isNaN(v)) { el.textContent = '金額を入力してください'; el.style.color = 'var(--text-hint)'; return; }
+  const diff = v - a.balance;
+  el.textContent = diff === 0 ? 'ずれはありません' : `差額 ${diff > 0 ? '+' : '-'}${fmt(Math.abs(diff))} を調整します`;
+  el.style.color = diff === 0 ? 'var(--text-hint)' : diff > 0 ? 'var(--green)' : 'var(--red)';
+}
+
+function saveAccountEdit(id) {
+  const b = loadBalance();
+  const a = b.accounts.find(x => x.id === id);
+  if (!a) return;
+  const name = document.getElementById(`aedit-name-${id}`).value.trim();
+  const after = parseFloat(document.getElementById(`aedit-balance-${id}`).value);
+  if (!name || isNaN(after)) return;
+  const before = a.balance, diff = after - before, beforeName = a.name;
+  a.name = name;
+  a.balance = after;
+  let logId = null;
+  if (diff !== 0) {
+    // 調整の履歴（収支には含めない。口座残高だけを直す）
+    if (!b.adjustments) b.adjustments = [];
+    logId = Date.now();
+    b.adjustments.unshift({ id: logId, date: getTodayKey(), accountId: id, accountName: name, before, after, diff });
+    b.adjustments = b.adjustments.slice(0, 100);
+  }
+  saveBalance(b);
+  renderBalance();
+  if (diff !== 0) {
+    showUndoToast(`${name} の残高を ${diff > 0 ? '+' : '-'}${fmt(Math.abs(diff))} 調整しました`, () => {
+      const cur = loadBalance();
+      const acc = cur.accounts.find(x => x.id === id);
+      if (acc) { acc.balance -= diff; acc.name = beforeName; }
+      cur.adjustments = (cur.adjustments || []).filter(x => x.id !== logId);
+      saveBalance(cur);
+      renderBalance();
+    });
+  }
+}
+
 function renderBalance() {
   const b = loadBalance();
   const today = new Date();
@@ -4609,11 +4681,24 @@ function renderBalance() {
   const accEl = document.getElementById('account-list');
   const totalAcc = b.accounts.reduce((s, a) => s + a.balance, 0);
   accEl.innerHTML = b.accounts.length ? b.accounts.map(a => `
-    <div class="entry">
+    <div class="entry" id="acc-item-${a.id}">
       <span class="entry-name">${a.name}</span>
       <span class="entry-amount inc" style="font-size:15px;font-weight:600">${fmt(a.balance)}</span>
+      <button class="del-btn" onclick="editAccount(${a.id})" title="残高を調整" style="background:var(--win);border-color:var(--gold);color:var(--gold)">✏</button>
       <button class="del-btn" onclick="deleteAccount(${a.id})">×</button>
     </div>`).join('') : '';
+
+  // 残高調整の履歴
+  const adjEl = document.getElementById('adjust-list');
+  if (adjEl) {
+    const adj = (b.adjustments || []).slice(0, 20);
+    adjEl.innerHTML = adj.length ? adj.map(x => `
+    <div class="entry">
+      <span style="font-size:11px;color:var(--text-hint);font-family:var(--mono);white-space:nowrap">${x.date.slice(5).replace('-','/')}</span>
+      <span class="entry-name">${x.accountName}<span style="font-size:11px;color:var(--text-hint)"> ${fmt(x.before)} → ${fmt(x.after)}</span></span>
+      <span class="entry-amount ${x.diff >= 0 ? 'inc' : 'exp'}">${x.diff >= 0 ? '+' : '-'}${fmt(Math.abs(x.diff))}</span>
+    </div>`).join('') : '<div class="empty">まだ調整していません</div>';
+  }
   const totalEl = document.getElementById('account-total');
   totalEl.textContent = b.accounts.length > 1 ? `合計 ${fmt(totalAcc)}` : '';
 
