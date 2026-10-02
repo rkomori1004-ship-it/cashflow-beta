@@ -560,6 +560,48 @@ select option { background: #0d0d35; }
 ::-webkit-scrollbar-thumb { background: var(--border); }
 
 /* Mobile */
+/* 入金・支出の切り替え */
+.io-toggle { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 14px; border: 3px solid var(--border); }
+.io-btn {
+  font-family: 'DotGothic16', monospace; font-size: 14px; line-height: 1.4;
+  padding: 10px 6px; cursor: pointer; border: none;
+  background: var(--bg2); color: var(--text-hint); transition: all 0.1s;
+}
+.io-btn small { font-size: 11px; }
+.io-btn + .io-btn { border-left: 2px solid var(--border); }
+.io-btn.inc.active { background: #003322; color: var(--green); box-shadow: inset 0 0 0 2px var(--green); }
+.io-btn.exp.active { background: #330000; color: var(--red); box-shadow: inset 0 0 0 2px var(--red); }
+.card.io-inc { border-color: var(--green); }
+.card.io-exp { border-color: var(--red); }
+.io-form { display: none; }
+.io-form.active { display: block; }
+.add-btn.io-submit { width: auto; padding: 0 14px; font-family: 'DotGothic16', monospace; font-size: 13px; white-space: nowrap; }
+
+/* サブタブ（残高・負債） */
+.sub-tabs { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 12px; border: 3px solid var(--border-bright); background: #0d0d35; }
+.sub-tab {
+  font-family: 'DotGothic16', monospace; font-size: 13px; padding: 10px 6px;
+  cursor: pointer; border: none; background: transparent; color: var(--text-muted);
+}
+.sub-tab + .sub-tab { border-left: 2px solid var(--border); }
+.sub-tab.active { background: var(--win); color: var(--gold); }
+.sub-tab.active::before { content: '▶ '; }
+.sub-section { display: none; }
+.sub-section.active { display: block; }
+
+/* カード見出し＋「＋追加」 */
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 14px; }
+.card-head .card-title { margin-bottom: 0; }
+.add-toggle {
+  font-family: 'DotGothic16', monospace; font-size: 12px; padding: 4px 10px; cursor: pointer;
+  background: var(--win-light); color: var(--green); border: 2px solid var(--green); white-space: nowrap;
+}
+.add-panel { display: none; margin-bottom: 12px; padding: 10px; border: 2px dashed var(--border); }
+.add-panel.open { display: block; }
+.inner-details { margin-top: 12px; border-top: 2px solid var(--border); padding-top: 10px; }
+.inner-details > summary { cursor: pointer; font-size: 12px; color: var(--text-muted); user-select: none; }
+.inner-details[open] > summary { color: var(--gold); margin-bottom: 10px; }
+
 @media (max-width: 600px) {
   .metrics { grid-template-columns: 1fr 1fr; }
   .metrics .metric:last-child { grid-column: span 2; }
@@ -622,9 +664,16 @@ select option { background: #0d0d35; }
     <div class="metrics" id="personal-metrics"></div>
     <div id="daily-allowance-card"></div>
     <div id="today-spendable-card"></div>
-    <div id="factoring-home-summary"></div>
-    <div class="card">
-      <div class="card-title">収入を追加</div>
+    <div class="card io-exp" id="personal-io-card">
+      <div class="card-head">
+        <div class="card-title">✏ きろくする</div>
+        <button class="add-toggle" style="color:var(--mp);border-color:var(--mp)" onclick="openCsvImportModal()">📥 CSVから取り込む</button>
+      </div>
+      <div class="io-toggle">
+        <button class="io-btn inc" data-io="income" onclick="setIoMode('personal','income')">＋ 入ってくる<br><small>収入</small></button>
+        <button class="io-btn exp active" data-io="expense" onclick="setIoMode('personal','expense')">− 出ていく<br><small>支出</small></button>
+      </div>
+      <div class="io-form" data-io="income">
       <div class="form-grid exp-acc-grid">
         <div class="field"><label>発生日</label><input id="p-inc-date" type="date" onkeydown="if(event.key==='Enter')addEntry('personal','income')"></div>
         <div class="field"><label>内容</label><input id="p-inc-name" list="p-inc-namelist" placeholder="給与、副業など" onkeydown="if(event.key==='Enter')addEntry('personal','income')"></div>
@@ -638,10 +687,10 @@ select option { background: #0d0d35; }
         <div class="field"><label>入金先</label>
           <select id="p-inc-account"></select>
         </div>
-        <button class="add-btn green" onclick="addEntry('personal','income')" title="追加">+</button>
+        <button class="add-btn green io-submit" onclick="addEntry('personal','income')" title="収入を記録">＋ 収入を記録</button>
       </div>
-      <hr class="form-divider">
-      <div class="card-title">支出を追加</div>
+      </div>
+      <div class="io-form active" data-io="expense">
       <div class="form-grid exp-acc-grid">
         <div class="field"><label>発生日／支払期日</label><input id="p-exp-date" type="date" onkeydown="if(event.key==='Enter')addEntry('personal','expense')"></div>
         <div class="field"><label>内容</label><input id="p-exp-name" list="p-exp-namelist" placeholder="家賃、食費など" onkeydown="if(event.key==='Enter')addEntry('personal','expense')"></div>
@@ -656,7 +705,7 @@ select option { background: #0d0d35; }
           <select id="p-exp-account"></select>
         </div>
         <div class="field checkbox-field"><label>支払済</label><input type="checkbox" id="p-exp-paid" checked></div>
-        <button class="add-btn red" onclick="addEntry('personal','expense')" title="追加">+</button>
+        <button class="add-btn red io-submit" onclick="addEntry('personal','expense')" title="支出を記録">− 支出を記録</button>
         <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="saveAsTemplate('personal','expense')" title="固定費テンプレとして保存">📌</button>
       </div>
       <div id="alloc-hint" style="display:none;margin-top:10px;padding:10px 12px;background:#0d0d35;border:2px solid var(--mp)">
@@ -664,6 +713,7 @@ select option { background: #0d0d35; }
           <input type="checkbox" id="p-exp-alloc-check" style="width:18px;height:18px;accent-color:var(--mp)" checked>
           <span id="alloc-hint-text"></span>
         </label>
+      </div>
       </div>
     </div>
     <div class="card">
@@ -697,8 +747,17 @@ select option { background: #0d0d35; }
       <button class="nav-btn" onclick="changeMonth('business',1)">›</button>
     </div>
     <div class="metrics" id="business-metrics"></div>
-    <div class="card">
-      <div class="card-title">売上を追加</div>
+    <div id="factoring-home-summary"></div>
+    <div class="card io-exp" id="business-io-card">
+      <div class="card-head">
+        <div class="card-title">✏ きろくする</div>
+        <button class="add-toggle" style="color:var(--mp);border-color:var(--mp)" onclick="openCsvImportModal()">📥 CSVから取り込む</button>
+      </div>
+      <div class="io-toggle">
+        <button class="io-btn inc" data-io="income" onclick="setIoMode('business','income')">＋ 入ってくる<br><small>売上</small></button>
+        <button class="io-btn exp active" data-io="expense" onclick="setIoMode('business','expense')">− 出ていく<br><small>経費</small></button>
+      </div>
+      <div class="io-form" data-io="income">
       <div class="form-grid biz-grid-acc">
         <div class="field"><label>発生日</label><input id="b-inc-date" type="date" onkeydown="if(event.key==='Enter')addEntry('business','income')"></div>
         <div class="field"><label>クライアント / 案件名</label><input id="b-inc-name" list="b-inc-namelist" placeholder="案件名" onkeydown="if(event.key==='Enter')addEntry('business','income')"></div>
@@ -718,10 +777,10 @@ select option { background: #0d0d35; }
         <div class="field"><label>入金先</label>
           <select id="b-inc-account"></select>
         </div>
-        <button class="add-btn green" onclick="addEntry('business','income')" title="追加">+</button>
+        <button class="add-btn green io-submit" onclick="addEntry('business','income')" title="売上を記録">＋ 売上を記録</button>
       </div>
-      <hr class="form-divider">
-      <div class="card-title">経費を追加</div>
+      </div>
+      <div class="io-form active" data-io="expense">
       <div class="form-grid exp-acc-grid">
         <div class="field"><label>発生日／支払期日</label><input id="b-exp-date" type="date" onkeydown="if(event.key==='Enter')addEntry('business','expense')"></div>
         <div class="field"><label>内容</label><input id="b-exp-name" list="b-exp-namelist" placeholder="経費の内容" onkeydown="if(event.key==='Enter')addEntry('business','expense')"></div>
@@ -736,8 +795,9 @@ select option { background: #0d0d35; }
           <select id="b-exp-account"></select>
         </div>
         <div class="field checkbox-field"><label>支払済</label><input type="checkbox" id="b-exp-paid" checked></div>
-        <button class="add-btn red" onclick="addEntry('business','expense')" title="追加">+</button>
+        <button class="add-btn red io-submit" onclick="addEntry('business','expense')" title="経費を記録">− 経費を記録</button>
         <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="saveAsTemplate('business','expense')" title="固定費テンプレとして保存">📌</button>
+      </div>
       </div>
     </div>
     <div class="card">
@@ -754,13 +814,19 @@ select option { background: #0d0d35; }
     <!-- ファクタリング管理 -->
     <div class="card" style="border-color:var(--mp)">
       <div class="card-title" style="color:var(--mp)">💴 ファクタリング管理</div>
-      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">ファクタリング会社ごとに案件を管理します。入金済にすると口座残高と売上に自動反映されます。</p>
-      <div class="form-grid" style="grid-template-columns:1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">ファクタリング会社ごとに案件を管理します。入金済にすると口座残高と売上に自動反映され、返済は「残高・負債」の今月の支払い予定に出ます。</p>
+      <div class="form-grid" style="grid-template-columns:1.4fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
         <div class="field"><label>ファクタリング会社を追加</label><input id="fc-company-name" placeholder="ラボル、ペイトナーなど" onkeydown="if(event.key==='Enter')addFactoringCompany()"></div>
+        <div class="field"><label>手数料率（％・任意）</label><input id="fc-company-fee" type="number" step="0.1" placeholder="5" onkeydown="if(event.key==='Enter')addFactoringCompany()"></div>
         <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="addFactoringCompany()" title="追加">+</button>
       </div>
       <button class="csv-btn" onclick="openFactoringCaseModal()" style="border-color:var(--mp);color:var(--mp);margin-bottom:14px">＋ ファクタリング案件を登録</button>
       <div id="factoring-mgmt-list"></div>
+      <details class="inner-details">
+        <summary>💱 手数料を比べる（売掛金をいま現金化したら？）</summary>
+        <div class="field" style="margin-bottom:10px"><label>売掛金額（円）</label><input id="factoring-sim-amount" type="number" placeholder="400000" oninput="renderFactoringComparison()"></div>
+        <div id="factoring-comparison"></div>
+      </details>
     </div>
 
     <div class="card" style="border-color:var(--gold)">
@@ -792,97 +858,123 @@ select option { background: #0d0d35; }
   <!-- 残高・負債 -->
   <div id="tab-balance" class="section">
 
-    <!-- 今月の支払い予定 -->
+    <div class="sub-tabs">
+      <button class="sub-tab active" data-sub="month" onclick="setBalanceSub('month')">📆 今月</button>
+      <button class="sub-tab" data-sub="assets" onclick="setBalanceSub('assets')">🏦 口座・借金</button>
+    </div>
+
+    <!-- ===== 今月 ===== -->
+    <div class="sub-section active" data-sub="month">
+
+    <!-- 今月の支払い予定（手元残高予測を内包） -->
     <div id="due-card" class="card" style="border-color:var(--gold)">
       <div class="card-title" style="color:var(--gold)">📆 今月の支払い予定</div>
       <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">ファクタリング返済・未払い一覧・ローン返済のうち、今月払うものをまとめています</div>
       <div id="due-card-body"></div>
-    </div>
-
-    <!-- カード別 月ごとの利用額 -->
-    <div id="card-monthly-card" class="card" style="display:none">
-      <div class="card-title">💳 カード別 月ごとの利用額</div>
-      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">※ 利用した月の集計で、引落は翌月以降です</div>
-      <div id="card-monthly-body" style="overflow-x:auto"></div>
-    </div>
-
-    <!-- 月末CF予測ヒーロー -->
-    <div id="cf-forecast-card" class="card" style="border-color:var(--green);background:linear-gradient(135deg,#001a0d 0%,#0a0a2a 100%)">
-      <div class="card-title">今月の手元残高予測</div>
-      <div id="cf-forecast"></div>
+      <details class="inner-details" id="cf-forecast-card">
+        <summary>📈 月末の残高予測（今月の収入・支出も含めた見込み）</summary>
+        <div id="cf-forecast"></div>
+      </details>
     </div>
 
     <!-- 未払い一覧 -->
     <div class="card" style="border-color:var(--red)">
-      <div class="card-title" style="color:var(--red);text-shadow:1px 1px 0 #660000">⚠ 未払い一覧</div>
+      <div class="card-head">
+        <div class="card-title" style="color:var(--red);text-shadow:1px 1px 0 #660000">⚠ 未払い一覧</div>
+        <button class="add-toggle" style="color:var(--red);border-color:var(--red)" onclick="toggleAddPanel('unpaid-add-panel')">＋ 追加</button>
+      </div>
+      <div class="add-panel" id="unpaid-add-panel">
       <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">クレカ・ローン・公共料金など、まだ払っていないものを手動で登録できます（過去の月分もOK）</div>
-      <div class="form-grid unpaid-grid">
-        <div class="field"><label>対象月</label><input id="unpaid-month" type="month"></div>
-        <div class="field"><label>内容</label><input id="unpaid-name" placeholder="5月分カード代など"></div>
-        <div class="field"><label>金額（円）</label><input id="unpaid-amount" type="number" placeholder="50000"></div>
-        <div class="field"><label>種類</label>
-          <select id="unpaid-cat" onchange="updateUnpaidLinkSelect()">
-            <option>クレジットカード</option><option>ローン・借金</option><option>公共料金</option><option>税金</option><option>その他</option>
-          </select>
+        <div class="form-grid unpaid-grid">
+          <div class="field"><label>対象月</label><input id="unpaid-month" type="month"></div>
+          <div class="field"><label>内容</label><input id="unpaid-name" placeholder="5月分カード代など"></div>
+          <div class="field"><label>金額（円）</label><input id="unpaid-amount" type="number" placeholder="50000"></div>
+          <div class="field"><label>種類</label>
+            <select id="unpaid-cat" onchange="updateUnpaidLinkSelect()">
+              <option>クレジットカード</option><option>ローン・借金</option><option>公共料金</option><option>税金</option><option>その他</option>
+            </select>
+          </div>
+          <div class="field" id="unpaid-link-wrap" style="display:none"><label id="unpaid-link-label">カード</label>
+            <select id="unpaid-link"></select>
+          </div>
+          <div class="field"><label>支払い元口座</label>
+            <select id="unpaid-account"><option value="">未指定（残高に反映しない）</option></select>
+          </div>
+          <button class="add-btn red" onclick="addUnpaid()" title="追加">+</button>
         </div>
-        <div class="field" id="unpaid-link-wrap" style="display:none"><label id="unpaid-link-label">カード</label>
-          <select id="unpaid-link"></select>
-        </div>
-        <div class="field"><label>支払い元口座</label>
-          <select id="unpaid-account"><option value="">未指定（残高に反映しない）</option></select>
-        </div>
-        <button class="add-btn red" onclick="addUnpaid()" title="追加">+</button>
       </div>
       <div class="entry-list" id="unpaid-list"></div>
       <div id="unpaid-total" style="text-align:right;margin-top:10px;font-family:var(--mono);font-size:13px;color:var(--red)"></div>
     </div>
 
-    <!-- 口座残高 -->
+    </div>
+
+    <!-- ===== 口座・借金 ===== -->
+    <div class="sub-section" data-sub="assets">
+
+    <!-- 口座残高（振替を内包） -->
     <div class="card">
-      <div class="card-title">🏦 口座・現金残高</div>
+      <div class="card-head">
+        <div class="card-title">🏦 口座・現金残高</div>
+        <button class="add-toggle" onclick="toggleAddPanel('acc-add-panel')">＋ 追加</button>
+      </div>
+      <div class="add-panel" id="acc-add-panel">
       <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">※「現金」という名前で登録すると現金管理もできます</div>
-      <div class="form-grid" style="grid-template-columns:1.5fr 1.5fr auto;gap:8px;align-items:end;margin-bottom:12px">
-        <div class="field"><label>口座名</label><input id="acc-name" placeholder="三菱UFJ、現金 など"></div>
-        <div class="field"><label>現在の残高（円）</label><input id="acc-balance" type="number" placeholder="500000"></div>
-        <button class="add-btn green" onclick="addAccount()" title="追加">+</button>
+        <div class="form-grid" style="grid-template-columns:1.5fr 1.5fr auto;gap:8px;align-items:end;margin-bottom:12px">
+          <div class="field"><label>口座名</label><input id="acc-name" placeholder="三菱UFJ、現金 など"></div>
+          <div class="field"><label>現在の残高（円）</label><input id="acc-balance" type="number" placeholder="500000"></div>
+          <button class="add-btn green" onclick="addAccount()" title="追加">+</button>
+        </div>
       </div>
       <div class="entry-list" id="account-list"></div>
       <div id="account-total" style="text-align:right;margin-top:10px;font-family:var(--mono);font-size:13px;color:var(--text-muted)"></div>
+      <details class="inner-details">
+        <summary>🔄 ふりかえ（口座間・ATM引き出しなど）</summary>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">収支には影響しません。口座残高だけが移動します。</div>
+        <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+          <div class="field"><label>出金元</label><select id="transfer-from"></select></div>
+          <div class="field"><label>入金先</label><select id="transfer-to"></select></div>
+          <div class="field"><label>金額（円）</label><input id="transfer-amount" type="number" placeholder="30000"></div>
+          <button class="add-btn green" onclick="addTransfer()" title="振替実行">→</button>
+        </div>
+        <div class="entry-list" id="transfer-list"></div>
+      </details>
     </div>
 
-    <!-- 振替 -->
+    <!-- クレカ（月ごとの利用額を内包） -->
     <div class="card">
-      <div class="card-title">🔄 ふりかえ（口座間・ATM引き出しなど）</div>
-      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">収支には影響しません。口座残高だけが移動します。</div>
-      <div class="form-grid" style="grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
-        <div class="field"><label>出金元</label><select id="transfer-from"></select></div>
-        <div class="field"><label>入金先</label><select id="transfer-to"></select></div>
-        <div class="field"><label>金額（円）</label><input id="transfer-amount" type="number" placeholder="30000"></div>
-        <button class="add-btn green" onclick="addTransfer()" title="振替実行">→</button>
+      <div class="card-head">
+        <div class="card-title">💳 クレジットカード</div>
+        <button class="add-toggle" style="color:var(--red);border-color:var(--red)" onclick="toggleAddPanel('cc-add-panel')">＋ 追加</button>
       </div>
-      <div class="entry-list" id="transfer-list"></div>
-    </div>
-
-    <!-- クレカ -->
-    <div class="card">
-      <div class="card-title">💳 クレジットカード</div>
+      <div class="add-panel" id="cc-add-panel">
       <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">今月の利用額は、支出記録で「支払い方法」にこのカードを選んだ分から自動集計されます。具体的な引き落とし予定額は「未払い一覧」に対象月を指定して登録してください（カード会社ごとに締め日が違うため）</div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+        <div class="form-grid" style="grid-template-columns:1.3fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
+          <div class="field"><label>カード名</label><input id="cc-name" placeholder="楽天カード、三井住友など"></div>
+          <div class="field"><label>分割残債（円）</label><input id="cc-debt" type="number" placeholder="0"></div>
+          <div class="field"><label>引き落とし日</label><input id="cc-day" type="number" min="1" max="31" placeholder="27"></div>
+          <button class="add-btn red" onclick="addCreditCard()" title="追加">+</button>
+        </div>
+      </div>
+      <div class="entry-list" id="creditcard-list"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
         <button class="csv-btn" onclick="enableCardNotifications()" style="border-color:var(--gold);color:var(--gold)">🔔 引き落とし日の通知を有効にする</button>
         <span id="notif-status" style="font-size:11px;color:var(--text-hint)"></span>
       </div>
-      <div class="form-grid" style="grid-template-columns:1.3fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
-        <div class="field"><label>カード名</label><input id="cc-name" placeholder="楽天カード、三井住友など"></div>
-        <div class="field"><label>分割残債（円）</label><input id="cc-debt" type="number" placeholder="0"></div>
-        <div class="field"><label>引き落とし日</label><input id="cc-day" type="number" min="1" max="31" placeholder="27"></div>
-        <button class="add-btn red" onclick="addCreditCard()" title="追加">+</button>
-      </div>
-      <div class="entry-list" id="creditcard-list"></div>
+      <details class="inner-details" id="card-monthly-card" style="display:none">
+        <summary>📊 カード別 月ごとの利用額</summary>
+        <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">※ 利用した月の集計で、引落は翌月以降です</div>
+        <div id="card-monthly-body" style="overflow-x:auto"></div>
+      </details>
     </div>
 
-    <!-- ローン・借金 -->
+    <!-- ローン・借金（完済シミュレーターを内包） -->
     <div class="card">
-      <div class="card-title">ローン・借金</div>
+      <div class="card-head">
+        <div class="card-title">📋 ローン・借金</div>
+        <button class="add-toggle" style="color:var(--red);border-color:var(--red)" onclick="toggleAddPanel('loan-add-panel')">＋ 追加</button>
+      </div>
+      <div class="add-panel" id="loan-add-panel">
       <p style="font-size:11px;color:var(--text-hint);margin-bottom:10px">「今まさに借りたお金」を入金先口座に反映したい場合は、下の「入金先口座」を選んでください（すでにある借金を記録するだけなら「未指定」でOK）</p>
       <div class="form-grid" style="grid-template-columns:1.2fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
         <div class="field"><label>名称</label><input id="loan-name" placeholder="奨学金、カーローンなど"></div>
@@ -892,49 +984,18 @@ select option { background: #0d0d35; }
         <div class="field"><label>入金先口座</label><select id="loan-deposit-account"><option value="">未指定（残高に反映しない）</option></select></div>
         <button class="add-btn red" onclick="addLoan()" title="追加">+</button>
       </div>
+      </div>
       <div class="entry-list" id="loan-list"></div>
+      <details class="inner-details">
+        <summary>🎯 借金完済シミュレーター</summary>
+        <div id="payoff-sim"></div>
+        <div class="form-grid" style="grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:12px">
+          <div class="field"><label>追加返済額（月・円）</label><input id="payoff-extra" type="number" placeholder="0" oninput="renderPayoffSim()"></div>
+        </div>
+      </details>
     </div>
 
-    <!-- 借金完済シミュレーター -->
-    <div class="card" style="border-color:var(--gold);background:linear-gradient(135deg,#1a1500 0%,#0a0a2a 100%)">
-      <div class="card-title" style="color:var(--gold)">🎯 借金完済シミュレーター</div>
-      <div id="payoff-sim"></div>
-      <div class="form-grid" style="grid-template-columns:1fr auto;gap:8px;align-items:end;margin-top:12px">
-        <div class="field"><label>追加返済額（月・円）</label><input id="payoff-extra" type="number" placeholder="0" oninput="renderPayoffSim()"></div>
-      </div>
     </div>
-
-    <!-- ファクタリング手数料比較 -->
-    <div class="card" style="border-color:var(--mp)">
-      <div class="card-title" style="color:var(--mp)">💱 ファクタリング手数料比較</div>
-      <p style="font-size:11px;color:var(--text-muted);margin-bottom:12px">利用しているファクタリング会社を登録すると、売掛金を今すぐ現金化した場合の受取額を比較できます</p>
-      <div class="form-grid" style="grid-template-columns:1.2fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
-        <div class="field"><label>会社名</label><input id="factoring-name" placeholder="ラボル、ペイトナーなど"></div>
-        <div class="field"><label>手数料率（％）</label><input id="factoring-fee" type="number" step="0.1" placeholder="5"></div>
-        <button class="add-btn" style="background:var(--win-light);color:var(--mp);border:3px solid var(--mp)" onclick="addFactoring()" title="追加">+</button>
-      </div>
-      <div id="factoring-list" style="margin-bottom:14px"></div>
-      <div style="border-top:2px solid var(--border);padding-top:12px">
-        <div class="field" style="margin-bottom:10px"><label>売掛金額（円）でシミュレーション</label><input id="factoring-sim-amount" type="number" placeholder="400000" oninput="renderFactoringComparison()"></div>
-        <div id="factoring-comparison"></div>
-      </div>
-    </div>
-
-    <div class="card" style="border-color:var(--green)">
-      <div class="card-title" style="color:var(--green)">📥 CSVインポート（銀行・クレカ）</div>
-      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">三菱UFJ・ドコモSMTBネット銀行・セゾン・JCBのCSVを読み込んで収支を自動登録します。カテゴリはGemini AIで自動判定。</p>
-      <div style="margin-bottom:12px">
-        <details>
-          <summary style="font-size:11px;color:var(--text-hint);cursor:pointer;user-select:none">⚙ Gemini APIキー設定（カテゴリ自動分類）</summary>
-          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-            <input type="password" id="gemini-api-key-input" placeholder="AIzaSy..." style="flex:1;min-width:200px" oninput="saveGeminiKey()">
-            <span id="gemini-key-status" style="font-size:11px;color:var(--text-hint);align-self:center"></span>
-          </div>
-        </details>
-      </div>
-      <button class="csv-btn" onclick="openCsvImportModal()" style="border-color:var(--green);color:var(--green)">📥 CSVをインポートする</button>
-    </div>
-
   </div>
 
   <!-- レベル・ごほうび -->
@@ -1163,6 +1224,14 @@ select option { background: #0d0d35; }
       <div style="padding:16px">
         <!-- STEP1: 銀行選択 -->
         <div id="csv-step1">
+          <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">三菱UFJ・ドコモSMTBネット銀行・セゾン・JCBのCSVを読み込んで収支を自動登録します。カテゴリはGemini AIで自動判定。</p>
+          <details style="margin-bottom:12px">
+            <summary style="font-size:11px;color:var(--text-hint);cursor:pointer;user-select:none">⚙ Gemini APIキー設定（カテゴリ自動分類）</summary>
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+              <input type="password" id="gemini-api-key-input" placeholder="AIzaSy..." style="flex:1;min-width:200px" oninput="saveGeminiKey()">
+              <span id="gemini-key-status" style="font-size:11px;color:var(--text-hint);align-self:center"></span>
+            </div>
+          </details>
           <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px">① 読み込む種別を選択してください</p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
             <button class="csv-btn" onclick="selectCsvBank('mufg')" style="justify-content:center;padding:14px 8px;flex-direction:column;gap:4px"><span style="font-size:16px">🏦</span><span>三菱UFJ銀行</span></button>
@@ -2077,14 +2146,23 @@ function renderFactoringList() {
     </div>`).join('') : '<div class="empty">ファクタリング会社が登録されていません</div>';
 }
 
+// 手数料比較に使う会社一覧（ファクタリング管理の会社＋旧リストのうち未統合のもの）
+function getFactoringFeeList() {
+  let companies = [];
+  try { companies = JSON.parse(localStorage.getItem('cf-factoring-companies-v1')) || []; } catch(e) {}
+  const list = companies.filter(c => c.feeRate > 0).map(c => ({ name: c.name, fee: c.feeRate }));
+  loadFactoring().forEach(f => { if (!companies.some(c => c.name === f.name)) list.push({ name: f.name, fee: f.fee }); });
+  return list;
+}
+
 function renderFactoringComparison() {
   const el = document.getElementById('factoring-comparison');
   if (!el) return;
-  const list = loadFactoring();
+  const list = getFactoringFeeList();
   const amountEl = document.getElementById('factoring-sim-amount');
   const amount = parseFloat(amountEl ? amountEl.value : '') || 0;
 
-  if (list.length === 0) { el.innerHTML = ''; return; }
+  if (list.length === 0) { el.innerHTML = '<div class="empty">手数料率を登録した会社がありません（会社名をタップすると手数料率を設定できます）</div>'; return; }
   if (amount <= 0) { el.innerHTML = '<div class="empty">売掛金額を入力してください</div>'; return; }
 
   const results = list.map(f => ({
@@ -4847,6 +4925,40 @@ function switchTab(name) {
   if (name === 'advisor' && window.renderAdvisorTab) window.renderAdvisorTab();
 }
 
+// ---- 画面の切り替え状態（端末ごとの表示設定。同期はしない） ----
+function uiPrefGet(key, def) { try { return localStorage.getItem(key) || def; } catch(e) { return def; } }
+function uiPrefSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
+
+// 入ってくる／出ていく の切り替え
+function setIoMode(mode, io) {
+  const card = document.getElementById(`${mode}-io-card`);
+  if (!card) return;
+  card.querySelectorAll('.io-btn').forEach(b => b.classList.toggle('active', b.dataset.io === io));
+  card.querySelectorAll('.io-form').forEach(f => f.classList.toggle('active', f.dataset.io === io));
+  card.classList.toggle('io-inc', io === 'income');
+  card.classList.toggle('io-exp', io === 'expense');
+  uiPrefSet(`cf-ui-io-${mode}`, io);
+}
+
+// 残高・負債タブの「今月／口座・借金」切り替え
+function setBalanceSub(sub) {
+  document.querySelectorAll('#tab-balance .sub-tab').forEach(b => b.classList.toggle('active', b.dataset.sub === sub));
+  document.querySelectorAll('#tab-balance .sub-section').forEach(sec => sec.classList.toggle('active', sec.dataset.sub === sub));
+  uiPrefSet('cf-ui-balance-sub', sub);
+}
+
+// 「＋追加」で登録フォームを開閉
+function toggleAddPanel(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('open');
+  if (el.classList.contains('open')) { const first = el.querySelector('input, select'); if (first) first.focus(); }
+}
+
+setIoMode('personal', uiPrefGet('cf-ui-io-personal', 'expense'));
+setIoMode('business', uiPrefGet('cf-ui-io-business', 'expense'));
+setBalanceSub(uiPrefGet('cf-ui-balance-sub', 'month'));
+
 autoApplyTemplates();
 renderAll();
 updateAccountSelects();
@@ -5993,23 +6105,62 @@ function saveFactoringCompanies(list) { localStorage.setItem('cf-factoring-compa
 function loadFactoringCases() { try { return JSON.parse(localStorage.getItem('cf-factoring-cases-v1')) || []; } catch(e) { return []; } }
 function saveFactoringCases(list) { localStorage.setItem('cf-factoring-cases-v1', JSON.stringify(list)); }
 
+// 旧「手数料比較」の会社リスト（cf-factoring-v1）を、名前で突き合わせて会社リストへ統合する。
+// 旧データは消さない（古いバックアップとの互換のため）。変更があったときだけ保存する。
+function mergeLegacyFactoringCompanies() {
+  const companies = loadFactoringCompanies();
+  let changed = false;
+  loadFactoring().forEach(f => {
+    const co = companies.find(c => c.name === f.name);
+    if (co) { if (!(co.feeRate > 0) && f.fee > 0) { co.feeRate = f.fee; changed = true; } }
+    else { companies.push({ id: 'fc_' + f.id, name: f.name, memo: '', feeRate: f.fee }); changed = true; }
+  });
+  if (changed) saveFactoringCompanies(companies);
+}
+
 function addFactoringCompany() {
   const nameEl = document.getElementById('fc-company-name');
+  const feeEl = document.getElementById('fc-company-fee');
   const name = nameEl.value.trim();
   if (!name) return;
+  const fee = parseFloat(feeEl.value);
   const companies = loadFactoringCompanies();
-  companies.push({ id: 'fc_' + Date.now(), name, memo: '' });
+  if (companies.some(c => c.name === name)) { alert('同じ名前の会社が登録済みです'); return; }
+  companies.push({ id: 'fc_' + Date.now(), name, memo: '', feeRate: fee > 0 ? fee : null });
   saveFactoringCompanies(companies);
-  nameEl.value = '';
+  nameEl.value = ''; feeEl.value = '';
   renderFactoringManagement();
   renderFactorySummary();
+}
+
+function editFactoringCompanyFee(id) {
+  const companies = loadFactoringCompanies();
+  const co = companies.find(c => c.id === id);
+  if (!co) return;
+  const v = prompt(`「${co.name}」の手数料率（％）\n空欄で未設定にします`, co.feeRate > 0 ? co.feeRate : '');
+  if (v === null) return;
+  const fee = parseFloat(v);
+  if (v.trim() && (isNaN(fee) || fee < 0 || fee > 100)) { alert('0〜100の数字で入力してください'); return; }
+  co.feeRate = fee > 0 ? fee : null;
+  saveFactoringCompanies(companies);
+  renderFactoringManagement();
+}
+
+// 案件登録で会社を選んだら、その会社の手数料率を入れる
+function fcApplyCompanyFee() {
+  const co = loadFactoringCompanies().find(c => c.id === document.getElementById('fc-case-company').value);
+  if (!co || !(co.feeRate > 0)) return;
+  document.getElementById('fc-fee-rate-radio').checked = true;
+  document.getElementById('fc-fee-rate').value = co.feeRate;
+  fcToggleFeeType();
 }
 
 function openFactoringCaseModal() {
   const companies = loadFactoringCompanies();
   if (!companies.length) { alert('先にファクタリング会社を登録してください'); return; }
   const sel = document.getElementById('fc-case-company');
-  sel.innerHTML = companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+  sel.innerHTML = companies.map(c => `<option value="${c.id}">${c.name}${c.feeRate > 0 ? `（${c.feeRate}%）` : ''}</option>`).join('');
+  sel.onchange = fcApplyCompanyFee;
   // populate accounts
   const accSel = document.getElementById('fc-case-account');
   const b = loadBalance();
@@ -6027,6 +6178,7 @@ function openFactoringCaseModal() {
   document.getElementById('fc-receive-preview').textContent = '実入金額: ---';
   document.getElementById('fc-fee-rate-radio').checked = true;
   fcToggleFeeType();
+  fcApplyCompanyFee();
   document.getElementById('fc-case-modal').style.display = 'flex';
 }
 
@@ -6169,7 +6321,11 @@ function deleteFactoringCase(id) {
 
 function deleteFactoringCompany(id) {
   if (!confirm('この会社を削除しますか？（関連する案件は残ります）')) return;
-  saveFactoringCompanies(loadFactoringCompanies().filter(c => c.id !== id));
+  const companies = loadFactoringCompanies();
+  const co = companies.find(c => c.id === id);
+  saveFactoringCompanies(companies.filter(c => c.id !== id));
+  // 旧リストに同名があると次の統合で復活するので、そちらからも外す
+  if (co) saveFactoring(loadFactoring().filter(f => f.name !== co.name));
   renderFactoringManagement();
 }
 
@@ -6204,6 +6360,8 @@ function saveFactoringRepayEdit(id) {
 function renderFactoringManagement() {
   const el = document.getElementById('factoring-mgmt-list');
   if (!el) return;
+  mergeLegacyFactoringCompanies();
+  renderFactoringComparison();
 
   const companies = loadFactoringCompanies();
   const cases = loadFactoringCases();
@@ -6214,7 +6372,7 @@ function renderFactoringManagement() {
   if (companies.length) {
     html += '<div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px">';
     for (const co of companies) {
-      html += `<span style="font-size:11px;border:2px solid var(--mp);padding:3px 8px;color:var(--mp);display:inline-flex;align-items:center;gap:6px">${co.name}<button onclick="deleteFactoringCompany('${co.id}')" style="background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:13px;line-height:1">×</button></span>`;
+      html += `<span style="font-size:11px;border:2px solid var(--mp);padding:3px 8px;color:var(--mp);display:inline-flex;align-items:center;gap:6px"><span onclick="editFactoringCompanyFee('${co.id}')" style="cursor:pointer" title="タップで手数料率を設定">${co.name}<span style="color:var(--text-hint)">${co.feeRate > 0 ? ` ${co.feeRate}%` : ' ✏%'}</span></span><button onclick="deleteFactoringCompany('${co.id}')" style="background:none;border:none;color:var(--text-hint);cursor:pointer;font-size:13px;line-height:1">×</button></span>`;
     }
     html += '</div>';
   }
