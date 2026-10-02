@@ -739,6 +739,7 @@ input[type=checkbox] { accent-color: #34d399; }
 .metrics .metric-label { margin-bottom: 2px; }
 .metrics .metric-value { font-size: clamp(14px, 4.2vw, 22px); white-space: nowrap; }
 .ledger-views { margin-bottom: 12px; }
+#personal-weekly td:not(:first-child), #business-weekly td:not(:first-child) { white-space: nowrap; font-size: 11px; }
 
 /* 毎日の＋／− */
 .pl-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
@@ -811,6 +812,7 @@ input[type=checkbox] { accent-color: #34d399; }
 
   <div class="tabs">
     <button class="tab active" onclick="switchTab(uiPrefGet('cf-ui-ledger', 'personal'))">📒 収支</button>
+    <button class="tab" onclick="switchTab('analysis')">📊 分析</button>
     <button class="tab" onclick="switchTab('balance')">🪙 残高・負債</button>
     <button class="tab" onclick="switchTab('factoring')">💴 ファクタリング</button>
   </div>
@@ -886,33 +888,10 @@ input[type=checkbox] { accent-color: #34d399; }
         <div class="entry-list" id="personal-templates"></div>
       </details>
     </div>
-    <div class="sub-tabs ledger-views" style="grid-template-columns:repeat(2,1fr)">
-      <button class="sub-tab active" data-view="records" onclick="setLedgerView('personal','records')">📋 今月の記録</button>
-      <button class="sub-tab" data-view="analysis" onclick="setLedgerView('personal','analysis')">📊 分析</button>
-    </div>
     <div class="sub-section active" data-view="records">
     <div class="card">
       <div class="card-title">今月の記録</div>
       <div class="entry-list" id="personal-entries"></div>
-    </div>
-    </div>
-    <div class="sub-section" data-view="analysis">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:4px">📅 毎日の＋／−</div>
-      <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">今月の収入を日数で割った「1日あたりの収入」と、その日の支出を比べます</div>
-      <div class="daily-pl" data-mode="personal"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">週次サマリー</div>
-      <div id="personal-weekly"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">収支推移（6ヶ月）</div>
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>収入</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>支出</div>
-      </div>
-      <div class="chart-wrap"><canvas id="personal-chart"></canvas></div>
     </div>
     </div>
   </div>
@@ -987,10 +966,9 @@ input[type=checkbox] { accent-color: #34d399; }
         <div class="entry-list" id="business-templates"></div>
       </details>
     </div>
-    <div class="sub-tabs ledger-views" style="grid-template-columns:repeat(3,1fr)">
+    <div class="sub-tabs ledger-views" style="grid-template-columns:repeat(2,1fr)">
       <button class="sub-tab active" data-view="records" onclick="setLedgerView('business','records')">📋 記録</button>
       <button class="sub-tab" data-view="receivables" onclick="setLedgerView('business','receivables')">🧾 売掛金</button>
-      <button class="sub-tab" data-view="analysis" onclick="setLedgerView('business','analysis')">📊 分析</button>
     </div>
     <div class="sub-section active" data-view="records">
     <div class="card">
@@ -1007,30 +985,6 @@ input[type=checkbox] { accent-color: #34d399; }
       <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">未請求・請求済（＝まだ入金されていない）案件を、入金予定日が近い順に表示します</p>
       <div id="receivables-list"></div>
       <div id="receivables-total" style="text-align:right;margin-top:10px;font-family:var(--mono);font-size:13px;color:var(--mp)"></div>
-    </div>
-    </div>
-    <div class="sub-section" data-view="analysis">
-    <div class="card">
-      <div class="card-title" style="margin-bottom:4px">📅 毎日の＋／−</div>
-      <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">今月の収入を日数で割った「1日あたりの収入」と、その日の支出を比べます</div>
-      <div class="daily-pl" data-mode="business"></div>
-    </div>
-    <div class="card" style="border-color:var(--gold)">
-      <div class="card-title" style="color:var(--gold)">⚠ 収入依存度・リスク診断</div>
-      <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">直近3ヶ月のクライアント別売上シェアです。特定の1社に偏りすぎていないか確認できます</p>
-      <div id="dependency-chart"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">週次サマリー</div>
-      <div id="business-weekly"></div>
-    </div>
-    <div class="card">
-      <div class="card-title">売上・経費推移（6ヶ月）</div>
-      <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>売上</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>経費</div>
-      </div>
-      <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
     </div>
     </div>
   </div>
@@ -1055,6 +1009,57 @@ input[type=checkbox] { accent-color: #34d399; }
       </details>
     </div>
 
+  </div>
+
+  <!-- 分析 -->
+  <div id="tab-analysis" class="section">
+    <div class="month-nav">
+      <button class="nav-btn" onclick="changeAnalysisMonth(-1)">‹</button>
+      <div class="month-label" id="analysis-month-label"></div>
+      <button class="nav-btn" onclick="changeAnalysisMonth(1)">›</button>
+    </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:4px">📅 毎日の＋／−</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">今月の収入を日数で割った「1日あたりの収入」と、その日の支出を比べます</div>
+      <div class="daily-pl" data-mode="analysis"></div>
+    </div>
+    <div class="sub-tabs analysis-views">
+      <button class="sub-tab active" data-aview="personal" onclick="setAnalysisView('personal')">🏠 家計</button>
+      <button class="sub-tab" data-aview="business" onclick="setAnalysisView('business')">💼 仕事</button>
+    </div>
+    <div class="sub-section active" data-aview="personal">
+    <div class="card">
+      <div class="card-title">週次サマリー</div>
+      <div id="personal-weekly"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">収支推移（6ヶ月）</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>収入</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>支出</div>
+      </div>
+      <div class="chart-wrap"><canvas id="personal-chart"></canvas></div>
+    </div>
+    </div>
+    <div class="sub-section" data-aview="business">
+    <div class="card" style="border-color:var(--gold)">
+      <div class="card-title" style="color:var(--gold)">⚠ 収入依存度・リスク診断</div>
+      <p style="font-size:11px;color:var(--text-muted);margin-bottom:10px">直近3ヶ月のクライアント別売上シェアです。特定の1社に偏りすぎていないか確認できます</p>
+      <div id="dependency-chart"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">週次サマリー</div>
+      <div id="business-weekly"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">売上・経費推移（6ヶ月）</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>売上</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>経費</div>
+      </div>
+      <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
+    </div>
+    </div>
   </div>
 
   <!-- 残高・負債 -->
@@ -5210,9 +5215,9 @@ document.addEventListener('click', e => {
   }
 });
 
-// メインタブ: 0=収支（家計・仕事）, 1=残高・負債, 2=ファクタリング
+// メインタブ: 0=収支（家計・仕事）, 1=分析, 2=残高・負債, 3=ファクタリング
 function activateTab(name) {
-  const mainTabs = [['personal','business'], ['balance'], ['factoring']];
+  const mainTabs = [['personal','business'], ['analysis'], ['balance'], ['factoring']];
   // メインタブのみボタンをハイライト
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', !!mainTabs[i] && mainTabs[i].includes(name)));
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -5483,7 +5488,9 @@ function getDailyPL(year, month) {
 function renderDailyPL() {
   document.querySelectorAll('.daily-pl').forEach(el => {
     const mode = el.dataset.mode;
-    const { year, month } = state[mode];
+    const { year, month } = state[mode === 'analysis' ? 'personal' : mode];
+    const lbl = document.getElementById('analysis-month-label');
+    if (lbl && mode === 'analysis') lbl.textContent = `${year}年 ${MONTHS[month]}`;
     const pl = getDailyPL(year, month);
     const past = pl.list.filter(x => !x.future);
     const maxAbs = Math.max(1, ...past.map(x => Math.abs(x.net)));
@@ -5517,7 +5524,7 @@ function renderDailyPL() {
     el.innerHTML = `
       <div class="pl-summary">
         <div><div class="pl-k">1日あたりの収入</div><div class="pl-n">${fmt(pl.perDay)}</div><div class="pl-s">今月の収入 ${fmt(pl.income)} ÷ ${pl.days}日</div></div>
-        <div><div class="pl-k">今日までの合計</div><div class="pl-n" style="color:${total >= 0 ? '#67e8f9' : '#fda4af'}">${total >= 0 ? '+' : '−'}${fmt(Math.abs(total))}</div><div class="pl-s">＋の日 ${plus}日 ／ −の日 ${minus}日</div></div>
+        <div><div class="pl-k">${pl.list.some(x => x.future) ? '今日までの合計' : '月の合計'}</div><div class="pl-n" style="color:${total >= 0 ? '#67e8f9' : '#fda4af'}">${total >= 0 ? '+' : '−'}${fmt(Math.abs(total))}</div><div class="pl-s">＋の日 ${plus}日 ／ −の日 ${minus}日</div></div>
       </div>
       <div class="pl-grid">
         ${['月', '火', '水', '木', '金', '土', '日'].map(w => `<div class="pl-dow">${w}</div>`).join('')}
@@ -5533,7 +5540,7 @@ function renderDailyPL() {
 }
 
 function showDailyPLDetail(btn, mode, d) {
-  const { year, month } = state[mode];
+  const { year, month } = state[mode === 'analysis' ? 'personal' : mode];
   const pl = getDailyPL(year, month);
   const x = pl.list[d - 1];
   btn.parentElement.querySelectorAll('.pl-cell.sel').forEach(c => c.classList.remove('sel'));
@@ -5553,6 +5560,30 @@ function setLedgerView(mode, view) {
   if (view === 'analysis' && typeof charts === 'object') Object.values(charts).forEach(c => { try { c.resize(); } catch (e) {} });
 }
 
+// 分析タブ: 月を送ると家計・仕事の両方の表示月をそろえて動かす
+function changeAnalysisMonth(dir) {
+  let m = state.personal.month + dir, y = state.personal.year;
+  if (m > 11) { m = 0; y++; }
+  if (m < 0) { m = 11; y--; }
+  state.personal.month = state.business.month = m;
+  state.personal.year = state.business.year = y;
+  saveState();
+  autoApplyTemplates();
+  renderAll();
+}
+
+// 分析タブ下部の「家計／仕事」切り替え
+function setAnalysisView(view) {
+  const sec = document.getElementById('tab-analysis');
+  if (!sec) return;
+  if (view !== 'business') view = 'personal';
+  sec.querySelectorAll('.analysis-views .sub-tab').forEach(b => b.classList.toggle('active', b.dataset.aview === view));
+  sec.querySelectorAll('.sub-section[data-aview]').forEach(v => v.classList.toggle('active', v.dataset.aview === view));
+  uiPrefSet('cf-ui-aview', view);
+  // 非表示の間に描いたグラフは大きさが0なので、表示したら合わせ直す
+  if (typeof charts === 'object') Object.values(charts).forEach(c => { try { c.resize(); } catch (e) {} });
+}
+
 // 「＋追加」で登録フォームを開閉
 function toggleAddPanel(id) {
   const el = document.getElementById(id);
@@ -5566,6 +5597,7 @@ setIoMode('business', uiPrefGet('cf-ui-io-business', 'expense'));
 setBalanceSub(uiPrefGet('cf-ui-balance-sub', 'month'));
 setLedgerView('personal', uiPrefGet('cf-ui-view-personal', 'records'));
 setLedgerView('business', uiPrefGet('cf-ui-view-business', 'records'));
+setAnalysisView(uiPrefGet('cf-ui-aview', 'personal'));
 activateTab(uiPrefGet('cf-ui-ledger', 'personal'));
 
 autoApplyTemplates();
