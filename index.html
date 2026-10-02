@@ -4747,8 +4747,9 @@ function renderAll() {
   renderBudget();
   renderBalance();
   renderLevel();
-  renderFactoringManagement();
-  renderFactorySummary();
+  // ファクタリング関連は後ろの<script>で定義されるため、起動時（未定義）はスキップしてそちらの末尾で描画する
+  if (typeof renderFactoringManagement === 'function') renderFactoringManagement();
+  if (typeof renderFactorySummary === 'function') renderFactorySummary();
   renderTodaySpendable();
 }
 
@@ -6256,7 +6257,9 @@ function renderFactorySummary() {
   el.innerHTML = html;
 }
 
-renderDueCard();
+// 起動時の renderAll() ではまだ未定義だったため、ここで描画（renderFactorySummary の中で renderDueCard も呼ばれる）
+renderFactoringManagement();
+renderFactorySummary();
 </script>
 </body>
 </html>
