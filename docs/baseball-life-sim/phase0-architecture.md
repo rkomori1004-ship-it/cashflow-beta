@@ -1,0 +1,1025 @@
+# 野球人生・世界野球経営シミュレーター Phase 0 アーキテクチャ設計書
+
+- 対象：マスター仕様書 v1.0（以下「仕様」。§番号は仕様の章番号）
+- ステータス：**レビュー待ち（未承認）**。承認されるまで Phase 1 の実装は始めない
+- 作成日：2026-10-05
+- 関連：[phase0-open-decisions.md](./phase0-open-decisions.md)（設計上の指摘と、Phase 1 前に決める未確定仕様）
+
+---
+
+## 目次
+
+1. 最優先レビュー：「6歳からの人生」と「自律して動く世界」は両立できるか
+2. アーキテクチャ（技術スタック・レイヤ構成）
+3. World Engine
+4. データモデル（Entity 設計）
+5. 時間進行
+6. NPC シミュレーションと Simulation Fidelity
+7. 人生成長モデル（6歳〜40歳以上）
+8. 進路エンジン
+9. AI 意思決定
+10. 野球試合エンジン
+11. セーブ方式
+12. 実在データのインポート
+13. スマートフォンでの性能対策
+14. テスト設計
+15. ディレクトリ構造
+16. 実装ロードマップ（Phase 1 以降の依存関係）
+
+---
+
+## 1. 最優先レビュー：「6歳からの人生」と「自律して動く世界」は両立できるか
+
+### 結論
+
+**両立できる。ただし次の5つの設計を最初から入れておくことが条件。** どれか一つでも後付けにすると、Phase 5〜8 あたりで作り直しになる可能性が高い。
+
+| # | 条件 | 入れないとどうなるか |
+|---|------|----------------------|
+| 1 | **プレイヤーは「人間が操作している Person」にすぎない。** 進学・契約・起用などの判断はすべて同じ `Decision` の仕組みを通り、NPC は AI が、プレイヤーは UI が答える | プレイヤー専用の進路ロジックと NPC 用ロジックが二重化し、「プレイヤーだけ特別扱いの世界」になる（仕様 §1, §88-5,6） |
+| 2 | **時計は世界に一つ。処理の細かさは対象ごとに変える。** 世界は1日単位の日付を持つが、日次で処理するのはプレイヤー周辺だけ。遠い対象は週・月・年単位でまとめて処理する | 全員を日次で処理すると重すぎ、全員を年次にすると人生モードが成り立たない |
+| 3 | **人口の大半は「統計上の集団（コホート）」として持ち、必要になった時点で個人として具体化する（遅延具体化）。** 具体化は seed から決定的に行い、過去の集計と矛盾しない形にする | 日本のアマチュア野球人口（数十万人規模）を全員個人で持つとスマホでは保存も計算も破綻する |
+| 4 | **情報は「真の値」と「誰かが知っている値（認識）」に分ける。** 進路判定もドラフトも、組織が持つ認識（スカウト評価）に基づいて行う | 潜在能力の非公開（§35, §55）や「スカウト評価と実力のずれ」（§24, §54）が表現できない |
+| 5 | **ルールと暦はデータで持つ。** 学年暦・大会・NPB/MLB 制度・ドラフト形式を `LeagueRules` / `CompetitionRules` / `CalendarTemplate` で定義し、年度ごとに差し替えられるようにする | 100年動かすうちに制度が変わる（例：セ・リーグの DH 導入が 2027 年から予定、高校野球の DH 導入など※）。コード分岐では追従できない |
+
+※ 制度の具体的な年度は、データ化する時点で一次情報を確認する。設計書の例示を事実として扱わない。
+
+### 両立のイメージ
+
+```
+            ┌──────────── WorldClock（2026-04-01 → …… → 2126）────────────┐
+            │                                                            │
+日次処理    │ プレイヤー本人・所属チーム・同じ学年のライバル（Fidelity 3）│
+週次処理    │ 同じ地域の学校・注目選手・NPB/MLB の一軍（Fidelity 2）    │
+月次処理    │ その他の個人として存在する選手（Fidelity 1）              │
+年次処理    │ 全国の少年野球人口などの統計的な集団（Fidelity 0）        │
+            └────────────────────────────────────────────────────────────┘
+                 ↑ 全員が同じ時計の上にいるので「プレイヤーだけ年を取る」ことは構造上起こらない
+```
+
+プレイヤーが6歳の時点でも、NPB・MLB・甲子園のシーズンは並行して進み、結果は WORLD 画面から見られる。プレイヤーが高校生になって甲子園に関わるとき、対戦校の選手は「統計上の集団」から個人として具体化され、その時点から詳細に計算される。
+
+---
+
+## 2. アーキテクチャ（技術スタック・レイヤ構成）
+
+### 2.1 推奨技術スタック
+
+| 用途 | 推奨 | 理由・補足 |
+|------|------|------------|
+| 言語 | TypeScript（strict） | 仕様どおり。エンジンとアプリで型を共有できる |
+| モノレポ | pnpm workspaces | エンジンを UI から物理的に分離するため（§74） |
+| モバイル UI | React Native + Expo（expo-router） | 仕様の第一候補。Expo Web で PC ブラウザでも開発・確認できる |
+| UI 状態 | Zustand（表示用の状態のみ） | 世界の状態は UI に置かない。UI はエンジンへの問い合わせ結果を表示するだけ |
+| 永続化 | expo-sqlite（SQLite） | 世界全体を保存するため。JSON 一括保存は 100 年分の履歴で破綻する（§11） |
+| ヘッドレス実行 | Node.js 20+ の CLI | 100年シミュレーションのテスト・バランス調整はスマホではなく Node で回す |
+| テスト | Vitest + fast-check（性質ベーステスト） | §14 参照 |
+| データ取り込み | Node スクリプト（packages/data） | raw → normalized → gameData の変換（§69）。アプリには変換済みデータだけを入れる |
+| 乱数 | 自前の決定的乱数（カウンタ型 PRNG） | §3.5 参照。外部ライブラリ依存を避け、全環境で同じ結果にする |
+
+### 2.2 レイヤ構成
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ apps/mobile（Expo / React Native）                        │
+│   画面・ナビゲーション・表示用の状態                       │
+└───────────────▲──────────────────────────┬───────────────┘
+                │ 問い合わせ(Query)/通知     │ 操作(Command)
+┌───────────────┴──────────────────────────▼───────────────┐
+│ packages/engine-api   ← UI が触ってよい唯一の窓口          │
+│   Command（例：週の予定を設定、学校に問い合わせる）         │
+│   Query（例：HOME 表示用データ、学校検索）                  │
+│   Event（例：判断待ちが発生、ニュース追加）                 │
+└───────────────▲──────────────────────────────────────────┘
+┌───────────────┴──────────────────────────────────────────┐
+│ packages/engine（純粋な TypeScript。React も Expo も知らない）│
+│   world / time / people / development / education /       │
+│   pathway / orgs / leagues / competitions / game /         │
+│   scouting / ai / economy / history / news / events        │
+└───────────────▲──────────────────────────────────────────┘
+┌───────────────┴──────────────────────────────────────────┐
+│ packages/storage   保存先の抽象（SQLite / メモリ / ファイル）│
+│ packages/content   ルール・暦・学校・バランス数値（データ）  │
+│ packages/data      実在データの取り込みパイプライン（Node） │
+└──────────────────────────────────────────────────────────┘
+```
+
+**依存の向きのルール**（lint で機械的に検査する）
+
+- `engine` は `react`, `react-native`, `expo-*` を import してはいけない
+- `apps/mobile` は `engine` の内部モジュールを直接 import してはいけない（`engine-api` 経由のみ）
+- `engine` のロジックは `content` のデータを読むが、`data`（実在データの生データ）を直接読んではいけない（§69）
+
+これで将来 UI を Web や別フレームワークに替えても、エンジンはそのまま使える（§74）。
+
+### 2.3 実行スレッド
+
+React Native の JavaScript は基本的に1本のスレッドで動くため、「シーズン終了まで進める」のような重い処理中に画面が固まる。
+
+- **Phase 1〜5**：エンジンの処理を小分けにして、途中で画面に制御を返す（時分割）。`advance()` は非同期で、数日分ずつ処理して進捗を返す
+- **Phase 6 以降で再評価**：それでも足りなければ、別スレッドで JS を動かすライブラリ（JSI ベースのワーカー）に移す。エンジンが純粋な TS で、入出力が Command/Event に限られていれば移行は容易
+
+---
+
+## 3. World Engine
+
+### 3.1 世界の持ち方：巨大な GameState を作らない
+
+仕様 §67 のとおり、全データを1つの型に詰めない。**エンティティの種類ごとに独立したストア（Repository）を持ち、ID で参照し合う**。
+
+```ts
+// 概念図（実装時に細部は変わる）
+interface World {
+  meta: WorldMeta;                 // seed, 開始年, 現在日付, 難易度, 版数
+  clock: WorldClock;
+  stores: {
+    persons: Store<PersonId, Person>;
+    playerProfiles: Store<PersonId, PlayerProfile>;
+    organizations: Store<OrgId, Organization>;
+    schools: Store<OrgId, SchoolProfile>;
+    teams: Store<TeamId, Team>;
+    leagues: Store<LeagueId, League>;
+    seasons: Store<SeasonId, Season>;
+    competitions: Store<CompetitionId, Competition>;
+    memberships: Store<MembershipId, Membership>;   // 所属の履歴
+    contracts: Store<ContractId, Contract>;
+    relationships: RelationshipGraph;
+    injuries: Store<InjuryId, Injury>;
+    scoutReports: Store<ReportId, ScoutReport>;
+    opportunities: Store<OpportunityId, Opportunity>; // 進路の募集
+    applications: Store<ApplicationId, Application>;
+    stats: StatsStore;                               // 成績（期間ごとの集計）
+    history: HistoryLog;                             // 世界の出来事の記録
+    news: NewsFeed;
+    cohorts: CohortStore;                            // Fidelity 0 の統計集団
+    perception: PerceptionStore;                     // 「誰が何を知っているか」
+  };
+  rules: RuleRegistry;            // LeagueRules / CompetitionRules / CalendarTemplate（年度付き）
+  config: BalanceConfig;          // バランス数値（§71）
+  scheduler: Scheduler;           // 予定されたイベントの待ち行列
+}
+```
+
+- 各 Store は「変更された ID」を記録し、保存時はその差分だけ書く（§11）
+- 他エンティティへの参照は必ず ID。オブジェクトの直接参照はしない（保存・遅延読み込みのため）
+
+### 3.2 システム（処理の単位）
+
+世界を進める処理は「システム」として分ける。各システムは「どの頻度で」「どの Fidelity の対象を」処理するかを宣言する。
+
+```ts
+interface SimSystem {
+  id: string;                         // 例 "development.physical"
+  cadence: Cadence;                   // daily / weekly / monthly / yearly / onEvent
+  appliesTo: FidelityLevel[];         // 対象の詳細度
+  run(ctx: SimContext, window: DateRange): void;
+}
+```
+
+主なシステム：
+
+| システム | 内容 |
+|----------|------|
+| `life.daily` | プレイヤーの1日（学校・練習・勉強・自由時間）の処理 |
+| `development.*` | 身体成長・技術成長・加齢による衰え |
+| `education.*` | 学力・成績・模試・進級・卒業 |
+| `health.*` | 疲労・コンディション・ケガの発生と回復 |
+| `pathway.*` | 募集の開始、出願、選考、合否、入学・入団 |
+| `league.*` | 試合日程の消化、順位、昇格・降格（ロスター移動） |
+| `competition.*` | 大会の組み合わせ・進行・結果 |
+| `transactions.*` | ドラフト・FA・トレード・戦力外・契約更改・ポスティング |
+| `staff.*` | 監督交代・コーチ人事・指導者転身 |
+| `population.*` | 新しい子どもの流入、コホートの進級、引退、死去 |
+| `fidelity.*` | 詳細度の昇格・降格、コホートからの具体化 |
+| `history.*` / `news.*` | 出来事の記録とニュース化、古い記録の圧縮 |
+
+### 3.3 Command / Query / Event
+
+UI とエンジンのやり取りは3種類に限定する。
+
+- **Command**：プレイヤーの操作。例：`SetWeeklyRoutine`, `RequestSchoolVisit`, `ApplyToOpportunity`, `AnswerInterview`, `AcceptOffer`, `Advance({until})`
+- **Query**：表示用データの取得。例：`getHomeView()`, `searchSchools(filter)`, `getStandings(leagueId, year)`, `getPersonCareer(id)`
+  - Query は**認識（Perception）を通して返す**。プレイヤーが知らない値は「推定値・範囲・不明」として返し、真の値は返さない（デバッグモードを除く）
+- **Event**：エンジンからの通知。例：`DecisionRequired`, `NewsPublished`, `AdvanceStopped(reason)`
+
+### 3.4 「判断」の統一：Decision と Controller
+
+プレイヤーと NPC が同じ仕組みで動くための中核。
+
+```ts
+interface Decision<TOption> {
+  id: DecisionId;
+  kind: DecisionKind;          // "chooseJuniorTeam" | "acceptOffer" | "answerInterview" | "lineup" …
+  actor: ActorRef;             // 判断する Person または Organization
+  options: TOption[];
+  deadline: GameDate;
+  context: DecisionContext;    // 判断に必要な情報（認識ベース）
+}
+
+interface Controller {
+  decide<T>(d: Decision<T>): Promise<T> | T;
+}
+// HumanController : UI に DecisionRequired を出して回答を待つ（時間進行は止まる）
+// AIController    : 効用関数で即決する（§9）
+```
+
+- 誰が操作しているかは `World.meta.controlledPersonId` で持つ。**操作対象の切り替え（§4, §5 WORLD モード）**はこの ID を付け替え、Controller を差し替えるだけで済む
+- MANAGER / GM / OWNER モードでも同じ。監督として起用を決めるのも、GM としてドラフトするのも `Decision` で、操作していない球団は AI が答える
+
+### 3.5 決定的乱数（Seeded RNG）
+
+- 世界は `worldSeed` を1つ持つ
+- 乱数は**「何の・誰の・いつの」乱数かをキーにして導出する**（カウンタ型 PRNG）。例：`rng("injury", personId, date)`、`rng("game", gameId)`
+- 効果：
+  1. 同じ seed から同じ世界が再現できる（§72）。デバッグで「2041年のこの試合」だけを再現できる
+  2. 処理順序が変わっても結果が変わりにくい（システムを追加しても既存の乱数がずれない）
+  3. **ロードし直しても、同じ選択をすれば同じ結果になる**。結果を変えたければ判断そのものを変える必要がある → リセマラ（§81）が「乱数を引き直す」行為として機能しにくくなる
+- 具体化（§6.3）も `rng("materialize", cohortId, index)` で決まるので、いつ具体化しても同じ人物が生まれる
+
+---
+
+## 4. データモデル（Entity 設計）
+
+型は概念設計。実装時にフィールド名は調整する。**能力値は 0〜100 の実数（内部）**。球速などは物理単位。
+
+### 4.1 Person（人間そのもの）
+
+```ts
+interface Person {
+  id: PersonId;
+  name: PersonName;                 // 姓・名・読み・表記（英字名も）
+  birthDate: GameDate;
+  birthplace: RegionId;             // 都道府県・市区町村 / 国・州
+  nationality: CountryCode[];
+  sex: Sex;
+  handedness: { throws: Hand; bats: BatSide };
+  body: BodyState;                  // 現在の身長・体重（成長はdevelopmentが更新）
+  genetics: GeneticTraits;          // 成人時の身長傾向・成熟の早さなど（非公開）
+  personality: Personality;         // 少数の軸（§9.1）
+  family: FamilyId | null;          // Family は別 Entity
+  academics: AcademicProfile | null;// 学生の間のみ詳細
+  reputation: Reputation;           // §59
+  roles: PersonRoleSummary;         // 現在の役割（選手・学生・コーチ等）の要約キャッシュ
+  status: "alive" | "deceased";
+  fidelity: FidelityLevel;          // 0-3（§6）
+  origin: DataOrigin;               // "generated" | "imported" | "materialized"
+}
+```
+
+### 4.2 PlayerProfile（野球選手としての情報）
+
+Person と 1:0..1。野球をやめた人は PlayerProfile を「凍結」状態にする（削除はしない）。
+
+```ts
+interface PlayerProfile {
+  personId: PersonId;
+  primaryPosition: Position;
+  positionAptitude: Partial<Record<Position, number>>; // 適性 0-100
+  ratings: BaseballRatings;      // 現在能力（§4.3）
+  physical: PhysicalRatings;     // 身体能力（技術と分離 §33）
+  mental: MentalRatings;         // メンタル・野球IQ（§34）
+  arsenal: PitchArsenal | null;  // 投手のみ（§32）
+  potential: PotentialProfile;   // 潜在能力（非公開 §35）
+  growth: GrowthCurve;           // 連続的な成長曲線（§36）
+  condition: ConditionState;     // 疲労・調子
+  injuries: InjuryId[];          // 現在・過去
+  status: "active" | "inactive" | "retired";
+}
+```
+
+### 4.3 能力値（意味のあるものだけ）
+
+仕様 §31〜34 の最低限の項目をそのまま採用する。**試合エンジン・成長・評価のどれかで実際に使う項目だけを持つ**（§34「意味のない数字の羅列にしない」）。
+
+| グループ | 項目 |
+|----------|------|
+| 打撃 | contact, power, eye（選球眼）, batControl, vsRHP, vsLHP, bunt |
+| 走塁 | speed, acceleration, stealing, baserunningIQ |
+| 守備 | fielding（捕球）, throwAccuracy, armStrength, reaction, range, positioning ＋ 各ポジション適性 ＋ 捕手専用（blocking, framing は将来） |
+| 投手 | velocity（km/h 実数）, stuff（球威）, control, stamina, recovery, vsRHB, vsLHB, holdRunners（クイック・牽制）, composureRISP（ピンチ） |
+| 身体 | strength, explosiveness, endurance, flexibility, balance, reactionTime |
+| メンタル | focus, pressure, decisionMaking, learning, adaptability, confidence, motivation |
+
+- `vsRHP` / `vsLHP` は能力そのものではなく「左右差の補正値」として持つ（同じ能力が二重に効くのを防ぐ）
+- `confidence` と `motivation` は能力ではなく**状態**（変動が速い）なので `condition` 側に置く案を推奨。→ 決定事項 D-05
+
+### 4.4 球種（§32）
+
+```ts
+interface PitchArsenal { pitches: Pitch[] }
+interface Pitch {
+  type: PitchTypeId;           // "4SFB" | "SL" | "CB" | "CH" | "SPL" | "SNK" | "CUT" | ... データで定義
+  velocity: { mean: number; sd: number }; // km/h
+  movement: { horizontal: number; vertical: number }; // 抽象単位（基準球との差）
+  bite: number;                // キレ 0-100
+  command: number;             // その球種の制球 0-100
+  mastery: number;             // 習熟度 0-100（練習で上がる、新球種習得は低い値から）
+  usage: number;               // 投球割合の目安
+}
+```
+
+試合エンジンは球種ごとの値から「この打者に対する有効度」を合成して使う。MVP では球種を1球ごとにシミュレーションせず、打席単位で合成値を使う（§10）。
+
+### 4.5 潜在能力・成長曲線（非公開）
+
+```ts
+interface PotentialProfile {
+  ceilings: Partial<Record<RatingKey, number>>; // 各能力の到達上限の目安（固定ではなく、ケガ等で下がりうる）
+  trainability: number;      // 練習の効きやすさ
+  volatility: number;        // 成長のぶれやすさ
+}
+interface GrowthCurve {
+  // 技術：何歳ごろに伸びるか（連続値）
+  skillPeakAge: number;      // 例 27.3
+  skillRampWidth: number;    // 伸びる期間の広がり
+  // 身体：成熟のタイミング（思春期の伸び）
+  maturationOffset: number;  // 標準より何年早い/遅いか（例 -1.2 = 早熟）
+  // 衰え
+  declineOnsetAge: number;   // 例 31.0
+  declineRate: number;
+}
+```
+
+「早熟」「晩成」などのラベルは、この連続値から**表示用に後から付ける**（§36）。
+
+### 4.6 Organization / School / Team
+
+- **Organization**：運営主体。学校法人の学校、NPB 球団、MLB 球団、企業、独立リーグ球団、少年野球クラブなど
+- **SchoolProfile**：Organization のうち学校である場合の教育情報（偏差値・学費・公私立・入試制度・寮・進学実績）
+- **Team**：試合に出る「チーム」。1つの Organization が複数の Team を持つ（例：高校の硬式野球部と軟式野球部、NPB 球団の一軍・二軍・育成、MLB 球団と傘下の各階層）
+
+```ts
+interface Organization {
+  id: OrgId;
+  kind: OrgKind;            // "school" | "npbClub" | "mlbClub" | "milbAffiliate" | "company" | "independentClub" | "youthClub" | ...
+  name: string;
+  region: RegionId;
+  facilities: FacilityRatings;   // 設備
+  finances: FinanceState | null; // 経営対象（§56）。学校等は簡略
+  recruiting: RecruitingPolicy;  // 募集方針・スカウト網（§8）
+  parentOrg: OrgId | null;       // MLB 傘下の提携関係など
+  reputation: Reputation;
+}
+
+interface Team {
+  id: TeamId;
+  orgId: OrgId;
+  level: TeamLevel;          // "youthSoftball" | "juniorHard" | "hsHard" | "univ" | "npb1" | "npb2" | "npbDev" | "MLB" | "AAA" ...
+  leagueMemberships: { leagueId: LeagueId; seasonId: SeasonId }[];
+  roster: RosterSlot[];      // 登録状況（一軍登録・ベンチ入り・ベンチ外 など。意味はルールが定義）
+  staff: StaffSlot[];        // 監督・コーチ（Person の役割）
+  strength: TeamStrengthCache; // Fidelity 0-1 での試合計算用の総合力（§6）
+}
+```
+
+### 4.7 League / Season / Competition
+
+- **League**：継続的な枠組み（セ・リーグ、イースタン・リーグ、東京六大学、ある都道府県の高校野球連盟の大会群 など）
+- **Season**：League の年度ごとの実体（参加チーム、日程、順位、適用ルールの版）
+- **Competition**：大会（夏の地方大会、全国大会、日本シリーズ、ポストシーズン など）。League に属すこともあれば、独立していることもある
+
+```ts
+interface Competition {
+  id: CompetitionId;
+  rulesId: CompetitionRulesId;   // データ（§4.10）
+  year: number;
+  stages: StageInstance[];       // 予選→本大会 など
+  entrants: TeamId[];
+  results: CompetitionResult | null;
+}
+```
+
+### 4.8 Membership（所属履歴）と CareerRecord
+
+**キャリアは「所属の記録」と「成績の記録」から組み立てる。** 経歴専用のデータを手で更新しない。
+
+```ts
+interface Membership {
+  id: MembershipId;
+  personId: PersonId;
+  orgId: OrgId;
+  teamId: TeamId | null;
+  role: Role;            // "student" | "player" | "coach" | "manager" | "scout" | "gm" | "owner" | "agent" | ...
+  start: GameDate;
+  end: GameDate | null;
+  howJoined: JoinRoute;  // "generalExam" | "sportsRec" | "selection" | "scouted" | "draft:1" | "fa" | "trade" | ...
+  howLeft: LeaveRoute | null; // "graduated" | "released" | "retired" | "transferred" | ...
+  uniformNumber?: number;
+}
+```
+
+`CareerRecord`（§47）は Membership と StatsStore と HistoryLog から生成する**表示用の組み立て結果**であり、保存の正本ではない。
+
+### 4.9 Relationship（§41）
+
+```ts
+interface Relationship {
+  a: PersonId; b: PersonId;
+  kinds: RelationKind[];     // "teammate" | "rival" | "friend" | "senior" | "junior" | "coachOf" | "scoutOf" | "agentOf" | "family"
+  affinity: number;          // -100〜100
+  familiarity: number;       // どれだけ知っているか（認識の精度に影響）
+  since: GameDate;
+  lastInteraction: GameDate;
+  sharedHistory: HistoryEntryId[]; // 「2031年に対戦」など
+}
+```
+
+- 全員の全組み合わせは持たない。**プレイヤー（Fidelity 3）に関係する組と、重要な NPC 同士の組（師弟・ライバルなど）だけ**を持つ
+- 「チームメイト」は Membership の重なりから導出できるので、明示的な関係として保存するのは親しさが一定以上の組だけ
+
+### 4.10 LeagueRules / CompetitionRules（§68）
+
+```ts
+interface LeagueRules {
+  id: LeagueRulesId;
+  validFrom: number; validTo: number | null;   // 適用年度
+  game: GameRules;              // イニング数、DH、延長、タイブレーク、球数制限、コールド
+  roster: RosterRules;          // 登録人数、ベンチ入り、外国人枠、昇降格の制約
+  schedule: ScheduleRules;      // 試合数、対戦カードの組み方
+  postseason: PostseasonRuleRef;// CompetitionRules への参照
+  transactions: {
+    draft: DraftRuleRef | null; // 形式ID＋パラメータ
+    freeAgency: FARuleRef | null;
+    posting: PostingRuleRef | null;
+    trade: TradeRules;
+    release: ReleaseRules;
+  };
+}
+interface CompetitionRules {
+  id: CompetitionRulesId;
+  validFrom: number; validTo: number | null;
+  eligibility: EligibilityRule[];    // 学年・在籍・年齢
+  entrySelection: EntrySelectionRule;// 「各都道府県から1校、北海道・東京は2校」など
+  stages: StageRule[];               // "singleElimination" | "roundRobin" | "doubleElimination" | "bestOf"
+  calendar: CalendarWindowRef;
+  gameRulesOverride?: Partial<GameRules>;
+}
+```
+
+**「形式 ID ＋ パラメータ」方式**：ドラフトのくじ引き・ウェーバー、MLB のドラフトロッタリーなど、手順そのものが違うものは「形式」ごとのアルゴリズム（プラグイン）をエンジンに用意し、**どの形式を使うかはデータで選ぶ**。`if (league === "NPB")` は書かず、`draftFormats[rule.format](rule.params)` の形にする。
+
+### 4.11 WorldState / Family / その他
+
+- `WorldMeta`：worldSeed, 開始日, 現在日, 難易度, 有効なオプション（OB転生など）, データ版数
+- `Family`：経済状況、親の野球理解度、教育方針、送迎可否、転居可否、寮許可（§10）。**確率を動かすだけで、結果を固定しない**
+- `Injury`（§38）：部位、種類、重症度、発生日、復帰予定、再発リスク、後遺症（能力上限への影響）
+- `Contract`：当事者、種類（NPB 支配下・育成、MLB / マイナー契約、社会人の雇用、独立リーグ）、期間、年俸、条項（オプトアウト等はデータで定義）
+- `ScoutReport`：誰が（スカウト Person / 組織）誰を、いつ、何回見て、能力ごとに「推定値と幅」を付けたか
+
+---
+
+## 5. 時間進行
+
+### 5.1 時計と暦
+
+- 内部の日付は「基準日からの日数」の整数。表示時に年月日に変換する
+- 1年の流れは `CalendarTemplate`（データ）が決める：学年暦（4月入学、学期、長期休暇、入試時期）、NPB・MLB の開幕・閉幕、各大会の期間、ドラフト・FA などの手続き期間
+- テンプレートは年度ごとに版を持ち、制度変更に追従する
+
+### 5.2 処理の頻度（ケイデンス）
+
+| 頻度 | 対象と内容 |
+|------|-----------|
+| 日 | Fidelity 3：プレイヤーの生活、プレイヤーのチームの練習・試合、疲労・ケガ |
+| 週 | Fidelity 2：練習による成長、学力、注目チームの試合（打席単位の高速計算） |
+| 月 | Fidelity 1：成長・ケガ・調子をまとめて計算、リーグ戦の消化（チーム総合力ベースの試合計算） |
+| 年 | Fidelity 0：コホートの進級・離脱・引退、新規流入、統計値の更新 |
+| イベント | 予定されたイベント（大会の試合日、出願締切、ドラフト会議、契約更改）は日付どおりに発火 |
+
+月次で処理される人も、**途中で重要な出来事（大会出場など）が予定されていれば、その日までの分をまとめて処理してから出来事を処理する**（遅延評価）。これで「月の途中のケガが反映されない」といったずれを抑える。
+
+### 5.3 スケジューラと「進める」操作（§77）
+
+```ts
+advance({ until: "nextDay" | "nextGame" | "nextWeek" | "nextMonth" | "seasonEnd" | GameDate,
+          stopOn: StopPolicy })
+```
+
+- スケジューラは日付順のイベント待ち行列。進める間、日付順に「その日に処理が必要なシステム」と「その日のイベント」を実行する
+- **停止条件**：`DecisionRequired`（プレイヤーの判断が必要：面談・出願・オファー回答・ドラフト後の進路）、または重要度が設定値以上のイベント（ケガ、セレクション、大会、ドラフト、関係者のニュース）。停止の基準はプレイヤーが設定画面で変えられるようにする
+- 判断の期限が来てもプレイヤーが答えない場合の既定動作（例：オファーは期限切れ扱い）をルールで決めておく
+
+### 5.4 プレイヤーの時間管理（§8）
+
+仕様の「有限の時間の配分」をそのまま毎日選ばせると、6年間で約2,200日、高校卒業まで約4,400日の入力になり、操作が苦痛になる（→ 指摘 P-03）。
+
+**推奨：週間ルーティン＋例外入力**
+
+1. プレイヤーは「平日放課後」「土日」「長期休暇」ごとの**週間ルーティン**を組む（例：月水金チーム練習、火木は塾、毎日30分素振り、日曜は休養）
+2. 時間は「1週間に使える時間（例：放課後＋休日で合計○時間）」として予算化。学年・所属チームの拘束時間・通学時間で増減する
+3. エンジンは毎日そのルーティンを実行し、疲労・成長・学力・友人関係を更新する
+4. 例外の出来事（友達からの誘い、体験会、試験前、ケガ）が起きたときだけ日単位で選択を求める
+5. ルーティンの見直しを促すタイミング（学期の始め、成績表、ケガ明け）を用意する
+
+---
+
+## 6. NPC シミュレーションと Simulation Fidelity（§48, §49）
+
+### 6.1 Fidelity の定義
+
+| Level | 対象 | 持っているデータ | 処理 |
+|-------|------|------------------|------|
+| 3 | プレイヤー本人、同じチームの全員、家族、指導者、直接のライバル | すべて | 日次。試合は1球または打席単位 |
+| 2 | NPB / MLB の一軍・主要選手、同地区の有力校の主力、プレイヤーと関係のある人（元チームメイト等）、ドラフト候補上位 | すべて（関係は簡略） | 週次。試合は打席単位の高速計算 |
+| 1 | 個人として存在するその他の選手・指導者（二軍、マイナー、他地域の高校生、大学・社会人の選手） | 能力・成長曲線・所属・成績の要約 | 月次。試合はチーム単位で計算し、成績を個人へ配分 |
+| 0 | 統計上の集団（例：「2026年生まれ・○○県・少年野球参加者」） | 人数と能力の分布、進路の流れ | 年次 |
+
+### 6.2 昇格と降格
+
+- **昇格のきっかけ**：プレイヤーとの接点（同じ大会・チーム・地域）、ドラフト候補になる、プロ入り、ニュースになる活躍、プレイヤーが検索して詳細を見る
+- **降格のきっかけ**：一定期間接点がない、引退して指導者などにもならない
+- 降格しても**履歴は消さない**。Level 1 → 0 への降格（個人を集団へ戻す）は原則しない。Level 1 の人は引退後「アーカイブ人物」（§11.4）になる
+
+### 6.3 コホートからの具体化（遅延具体化）
+
+全国の少年野球・中学野球の人口を最初から個人として持たず、**必要になったときに個人を生み出す**。
+
+```
+Cohort（例：2019年度生まれ／埼玉県／中学硬式クラブ所属）
+  count: 1,240
+  abilityDistribution: 能力の分布（平均・ばらつき・上位層の厚さ）
+  positionMix, heightDistribution, academicDistribution ...
+  materialized: 38 人（すでに個人化された人数）
+```
+
+- 個人化した人は分布から引き抜かれ、コホートの人数から差し引かれる
+- 個人化された人の**過去**（どのチームにいたか、成績）は、その時点のコホートの状態から逆算してもっともらしく作る（「最初からいた」ように見せる）。ただし、すでに確定している出来事（大会結果など）と矛盾しないよう、チームの記録と結びつけて生成する
+- 高校・大学のチームは、Level 0/1 でも「どんな部員がいるか」を**チームの総合力と人数**で持ち、試合で必要になれば部員を具体化する
+- 具体化は決定的乱数で行うので、いつ具体化しても同じ人物になる（§3.5）
+
+### 6.4 規模の見積もり（目安）
+
+日本の高校硬式野球の部員数は十数万人規模、少年・中学を含めると数十万人規模（※正確な数は統計資料で確認してデータ化する）。これに MLB / MiLB、大学・社会人・独立を加えると、世界の野球人口は概算で数十万〜100万人規模になる。
+
+**設計上の上限目標（スマホ、Phase 12 時点）**
+
+| Level | 同時に存在する人数の目標 |
+|-------|-------------------------|
+| 3 | 〜500 人 |
+| 2 | 〜8,000 人 |
+| 1 | 〜80,000 人 |
+| 0 | 数千のコホート（人数はいくらでもよい） |
+
+Level 1 の人物の詳細度（能力の全項目を持つか、要約だけか）は性能測定で調整する。どの範囲を Level 1 以上で持つかは「世界の地理的な範囲」の決定（決定事項 D-02）に強く依存する。
+
+---
+
+## 7. 人生成長モデル（6歳〜40歳以上）（§36〜40）
+
+### 7.1 3つの成長を分ける
+
+1. **身体の成長**（身長・体重・筋力・瞬発力など）：年齢と遺伝で決まる部分が大きい。成熟のタイミング（`maturationOffset`）で思春期の伸びが早い/遅い
+2. **技術の成長**（打撃・守備・投球）：練習と試合経験で伸びる。上限（`ceilings`）に近づくほど伸びにくい
+3. **加齢による衰え**：身体能力から先に落ち、技術・判断は残りやすい
+
+### 7.2 身長の成長（§37）
+
+- 成人時の目標身長（遺伝傾向＋ばらつき）と、成長が最も速い年齢（男子でおおむね 12〜15 歳前後の個人差）をもとに、ロジスティック型の成長曲線で毎日〜毎月の身長を決める
+- 小6で 150cm の子が高校で 185cm になる、小学生で体が大きかった子が中学後半で周りに追いつかれる、が自然に起きる
+- 体重は身長・筋力・トレーニング・食事（生活の選択）で決まる
+
+### 7.3 技術の成長量（1回の練習・1週間ごと）
+
+```
+伸び = 基本学習率
+     × 練習の質（指導者の能力 × 設備 × 練習内容と能力の一致）
+     × 本人の学習力（mental.learning, trainability）
+     × 年齢・成長段階の係数（GrowthCurve から）
+     × 身体の土台（例：パワーは筋力・体格で上限が制約される）
+     × 疲労・ケガの係数（疲れているほど効率が下がる）
+     × 上限との距離（上限に近いほど逓減）
+     × 乱数（小さなぶれ。volatility で幅が変わる）
+```
+
+- 「練習ボタンで +1」にしない（§39）。同じ練習でも、指導者・設備・疲労・年齢で効果が変わる
+- **練習しすぎ**：疲労が溜まると伸びが落ち、ケガのリスクが上がる。休養には意味がある
+- **試合経験**（§40）：試合に出ると「実戦適応」系（判断・プレッシャー・対応力）が伸びる。ただしシーズン内で逓減し、同レベルの試合を続けても伸び続けない。より高いレベルでの試合ほど効果が大きい
+- **他競技の経験**（§7, §33）：小学生時代の水泳・サッカーなどは、身体能力（持久力・バランス・瞬発力）や身体の上限にわずかに効く
+
+### 7.4 潜在能力の扱い
+
+- 潜在能力は「到達しうる上限の目安」で、**到達を保証しない**。練習環境・ケガ・本人の選択次第で、上限のかなり手前で止まる人もいる
+- 大きなケガは上限を下げることがある（例：肘の手術で球速上限が下がる、あるいは戻る）
+- 上限自体が成長期に少しだけ変動する余地（`volatility`）を持たせ、「12歳時点の評価で人生が決まる」ことを避ける
+
+### 7.5 40歳以上
+
+選手を引退した後も Person は残る。指導者・スカウトとしての能力（指導力、評価眼、人脈）は経験と実績で伸びる。これは PlayerProfile ではなく役割ごとのプロフィール（`CoachProfile`, `ScoutProfile`, `ExecutiveProfile`）として持つ。
+
+---
+
+## 8. 進路エンジン（§11〜25）
+
+受験・推薦・セレクション・スカウト・面談・トライアウト・ドラフト・FA を**一つの仕組み**で扱う。
+
+### 8.1 基本の流れ
+
+```
+Opportunity（募集）
+  例：「○○高校 2034年度 スポーツ推薦（野球部）」「○○シニア 2032年 セレクション」「2038年 NPBドラフト」
+  └ Channel（経路）: 一般受験 / スポーツ推薦 / セレクション / スカウト / 総合型 / トライアウト / ドラフト / FA ...
+       └ Stage（段階）の並び:
+            出願 → 書類 → 実技 → 面談 → 学力試験 → 判定 → 内定 → 本人の受諾 → 入学/入団
+```
+
+```ts
+interface Opportunity {
+  id: OpportunityId;
+  orgId: OrgId; teamId?: TeamId;
+  channel: ChannelKind;
+  cycle: number;                 // 対象年度
+  window: { open: GameDate; close: GameDate };
+  eligibility: EligibilityRule[];// 学年・評定・地域・年齢など
+  stages: StageSpec[];           // 各段階の評価内容と重み
+  capacity: CapacitySpec;        // 定員、ポジション別の必要数
+  binding: "exclusive" | "nonExclusive"; // 専願・併願
+  visibility: "public" | "inviteOnly" | "rumored"; // 誰が存在を知っているか
+}
+```
+
+### 8.2 評価は「組織の目」で行う
+
+- 組織（学校・チーム）は応募者を**真の能力ではなく、自分の持つ認識（ScoutReport・セレクションでの観察）**で評価する
+- 評価の重みは組織の方針（`RecruitingPolicy`）とチーム事情で決まる：捕手が足りないチームは捕手の評価が上がる（§13）、左投手が欲しいなど
+- 一般受験は**学力試験の得点と内申**で判定し、野球能力は関係しない（§15）。スポーツ推薦は野球評価＋学力条件の両方を満たす必要がある（§10, §88-10）
+- セレクションの実技（50m走・遠投・打撃など）は、真の能力＋当日のコンディション＋小さな乱数で「観測値」が出て、それを評価者が見る（§13）。能力差は結果に強く反映されるが、当日の出来に左右される余地もある
+
+### 8.3 スカウトは「内定」ではない
+
+- スカウトからの接触は「推薦入試に進める権利」や「特待の提示」であり、**入学の確定ではない**（§15）。学力条件・面談・家庭の同意などの段階を通る必要がある
+- 逆に、スカウトされなくても、公開されている募集（一般受験・セレクション）には誰でも応募できる（§12, §79）
+
+### 8.4 プレイヤーが自分から動く（§12, §79）
+
+プレイヤーは WORLD から学校・チームを検索し、次の行動を取れる。各行動は時間とお金を使い、**情報（認識）を増やす**。
+
+| 行動 | 得られるもの |
+|------|-------------|
+| 資料を見る・口コミを聞く | 公開情報、噂（不正確なこともある） |
+| 見学・体験会・説明会に行く | 指導方針・練習量・部員の様子の精度が上がる。監督に顔を覚えてもらえることがある |
+| 練習参加を申し込む | 監督の評価を受ける（＝組織側の認識が増える）。チャンスにもリスクにもなる |
+| セレクション・入試に申し込む | 正式な選考 |
+| 面談を受ける | 双方の情報交換（§8.5） |
+
+公開されていない推薦枠（`inviteOnly`）も、練習参加や知人（Relationship）経由で存在を知り、接触できることがある。
+
+### 8.5 面談（§16）
+
+- 面談は「質問と回答のやり取り」で、データ（会話テンプレート）として定義する
+- 監督は性格・価値観（例：「ポジションへのこだわりを評価する」「チームの方針への従順さを重視する」）を持ち、**回答が監督の価値観に合うかどうか**で評価が上下する。正解は監督ごとに違う
+- プレイヤーからの質問（1年生の起用、寮、プロ志望への支援など）への監督の答えは、監督の本当の方針と、面談で良く見せようとする傾向（性格）の両方で決まる。入学後に「話が違う」ことも起こりうる
+
+### 8.6 マッチングの進め方
+
+各年度の募集は、暦に沿って複数の「ラウンド」で進む（推薦 → 一般など）。
+
+1. 組織が評価して内定を出す（定員を見ながら）
+2. 応募者が内定を受けるか判断する（プレイヤーは UI、NPC は AI）
+3. 専願の内定を受けたら他の出願は取り下げ
+4. 枠が埋まらなければ次のラウンドで補充
+
+Level 1 以下の人の大量の進路は、同じ評価式を使いつつ、**個人ごとの手続きを省いた一括マッチング**で処理する（性能のため）。Level 0 はコホート間の人数の流れとして処理する。
+
+### 8.7 ドラフト・指名漏れ（§24, §25）
+
+ドラフトも Opportunity の一種（`channel: "draft"`）。違いは「組織が指名権の順番に従って選ぶ」点だけで、手順は形式プラグイン（§4.10）で処理する。
+
+- プロ志望届のような**事前の意思表示**と、**指名漏れした場合の進路を事前に確保しているか**（大学の内定、社会人の内定）をデータで持つ
+- 指名漏れした人は、その時点で残っている Opportunity（大学の二次募集、独立リーグのトライアウト等）から次を選ぶ。何も確保していなければ選択肢は少ない
+
+---
+
+## 9. AI 意思決定（§53, §54, K）
+
+### 9.1 個人の判断：効用（好みの重みづけ）
+
+NPC は選択肢それぞれに点数をつけて選ぶ。点数は「本人が重視するもの × 選択肢の特徴」の合計に、小さな乱数を足したもの。
+
+| 本人の好み（性格から） | 選択肢の特徴の例 |
+|------------------------|------------------|
+| 野心（プロ志向） | 野球部のレベル、プロ輩出実績 |
+| 出場機会の重視 | 同ポジションの層の厚さから見た出場見込み |
+| 学業・安定志向 | 偏差値、大学進学実績、企業の安定性 |
+| 地元志向 | 通学時間、転居の必要 |
+| お金 | 学費、年俸 |
+| 人間関係 | 知人・先輩がいるか |
+
+- 家庭の制約（学費が払えない、寮は不可）は選択肢を除外するか、点数を大きく下げる
+- **判断に使う情報は本人の認識**（知っている範囲）。NPC も「強豪だと思ったら実は指導が合わなかった」が起きる
+
+### 9.2 組織の判断
+
+- **監督の起用**（§19, §53）：方針の重み（若手重視・実績重視・守備重視など）× 選手の認識上の能力・調子・学年・信頼。監督が交代すると重みが変わり、起用が変わる
+- **スカウト・ドラフト**（§54）：スカウトの評価精度に応じて誤差を含む ScoutReport から順位表（ボード）を作り、チームの必要性と合わせて指名する
+- **編成（GM）**：契約・トレード・戦力外。チームの戦力と予算から判断する（Phase 8 以降で本格化）
+
+### 9.3 判断理由の記録（§83）
+
+AI の判断は、上位いくつかの選択肢と点数の内訳を `DecisionTrace` として残せるようにする。保存は**デバッグモード時、または Level 2 以上の人物・プレイヤーに関係する判断だけ**（容量のため）。
+
+---
+
+## 10. 野球試合エンジン（§43〜46）
+
+### 10.1 UI から独立した純粋関数
+
+```ts
+simulateGame(setup: GameSetup, rules: GameRules, env: LeagueEnvironment, rng: Rng,
+             detail: "pitch" | "plateAppearance" | "teamLevel"): GameResult
+```
+
+- `GameSetup`：両チームの出場選手（能力のスナップショット）、球場、天候、疲労
+- `LeagueEnvironment`：その水準（少年・中学・高校・大学・NPB・MLB）の平均的な成績傾向（設定データ）
+- `GameResult`：スコア、ボックススコア、個人成績、（必要なら）1プレーずつの記録
+- 試合エンジンは World を直接触らない。結果の反映は呼び出し側（`league` / `competition` システム）が行う
+
+### 10.2 3段階の詳細度
+
+| 詳細度 | 用途 | 方法 |
+|--------|------|------|
+| pitch（1球） | プレイヤーが出る試合、観戦する試合（Phase 6 以降） | 打席の中のカウント進行、球種選択まで |
+| plateAppearance（打席） | Level 2 のチームの試合、プレイヤーの試合（MVP） | 打席ごとに結果を計算し、打球→守備→走者を処理 |
+| teamLevel（チーム） | Level 0/1 のチームの試合 | チームの総合力から得点を確率的に生成。成績は個人に配分 |
+
+### 10.3 打席の計算（打席単位）
+
+1. **結果の起こりやすさを合成**：打者の能力から見た傾向（三振しやすさ、四球を選ぶ力、打球の強さ・角度の傾向）と、投手の能力から見た傾向を、その水準の平均（`LeagueEnvironment`）を基準に組み合わせる（log5 / オッズ比型の合成）。左右・疲労・調子・状況（ピンチ）・球場の補正をかける
+2. **三振・四球・死球か、打球か**を決める
+3. 打球なら**打球の種類と強さ・方向**を生成（ゴロ・ライナー・フライ・ポップフライ）
+4. **守備判定**：方向にいる野手の守備範囲・反応・ポジショニングで届くか → 捕球（失策の可能性）→ 送球（肩・正確さ）
+5. **走者判定**：走者の走力・判断と野手の送球で進塁・アウトを決める
+
+能力値から確率への変換表は `config/batting.ts` などに置く（§71）。
+
+### 10.4 「長期では実力、短期では番狂わせ」（§44）
+
+- 1打席の結果はぶれるが、確率の合成が能力差を正しく反映していれば、シーズン単位では能力差が成績に出る
+- これは**較正テスト**で保証する：能力分布を与えて数千試合を回し、打率・本塁打率・防御率などがその水準の目標範囲に入るかを自動検査する（§14）
+
+### 10.5 成績（§46）
+
+- 打席・投球の結果から、仕様の野手・投手の項目を集計する。OPS・ERA・WHIP などは保存せず、集計値から計算する
+- **期間ごとに集計して保存**：個人 × 所属チーム × 大会/リーグ × 年度。小学生からプロまで同じ形式
+
+---
+
+## 11. セーブ方式（§66, F）
+
+### 11.1 基本
+
+- **SQLite（expo-sqlite）を使い、セーブスロットごとに1つのデータベースファイル**にする
+- 保存対象は世界全体（§66）。プレイヤーだけの保存はしない
+- データの形式に版数を持たせ、アプリ更新時は移行処理（マイグレーション）で古いセーブを読めるようにする
+
+### 11.2 テーブル構成（例）
+
+| テーブル | 内容 |
+|----------|------|
+| world_meta | seed, 現在日, 難易度, 版数 |
+| persons / player_profiles / ratings | 人物と能力。能力は数値配列をまとめて保存（容量削減） |
+| organizations / schools / teams | 組織 |
+| memberships / contracts | 所属と契約の履歴 |
+| relationships | 関係 |
+| seasons / competitions / results | リーグ・大会と結果 |
+| stats_period | 期間ごとの成績 |
+| box_scores | 試合単位の記録（保持方針あり） |
+| history | 世界の出来事 |
+| news | ニュース |
+| cohorts | 統計集団 |
+| perception | 認識（主にプレイヤーと組織のスカウト部門） |
+| scheduler | 予定されたイベント |
+
+### 11.3 書き方
+
+- **差分保存**：変更されたエンティティだけを書く。オートセーブは月初・重要イベント後・アプリがバックグラウンドに回ったとき
+- 書き込みはトランザクション単位で、途中で落ちても壊れないようにする
+- セーブスロットの複製（「ここから別の人生を試す」）はファイルのコピーで実現できる
+
+### 11.4 100年分の履歴を太らせない（履歴の圧縮）
+
+| データ | 保持方針 |
+|--------|----------|
+| プレイヤーが出た試合のボックススコア | 永久に保存 |
+| その他の試合のボックススコア | 当年度と前年度だけ。以降は期間成績に集約して破棄 |
+| 1プレーずつの記録 | プレイヤーの試合の直近分と、名場面として残すものだけ |
+| Level 1 の引退者 | 「アーカイブ人物」に圧縮（氏名・生年・経歴の要約・通算成績・主な出来事）。検索・閲覧はできる |
+| Level 0 のコホート | 年度ごとの要約統計のみ |
+| 歴代記録・タイトル・大会優勝校 | 永久に保存（容量は小さい） |
+| ニュース | 重要度の低いものは数年で削除。履歴（history）にある出来事からいつでも再表示できる |
+
+容量の目標：100年進めたセーブで **100MB 未満**（Phase 1〜2 で実測して見直す）。
+
+---
+
+## 12. 実在データのインポート（§2, §69, §70, G）
+
+### 12.1 3層構造
+
+```
+packages/data/
+  raw/          取得した元データ（手入力 CSV、提供元の形式のまま）。アプリには入れない
+  normalized/   共通の形式に整えたもの（人物・所属・成績・組織）。出典を必ず保持
+  game/         ゲーム用に変換したもの（能力値・初期ロスター）→ アプリ同梱 or 取り込み用ファイル
+```
+
+- エンジンは `game/` の形式だけを読む（§69）
+- アダプタ方式：`ManualCsvAdapter`, `JsonAdapter` を最初に作る。外部サイトから自動で取ってくるアダプタは、**利用規約・robots.txt・API の利用条件を確認して、許可されているものだけ**を個別に作る。条件を満たさないものは作らず、手入力・CSV/JSON で代替する（§2）
+
+### 12.2 値の「確からしさ」を持つ
+
+すべての取り込み値に出典と確度を付ける。
+
+```ts
+type Provenance = "observed"   // 実データそのもの（身長・成績・所属）
+               | "derived"    // 実データから計算（成績から算出した打撃能力）
+               | "estimated"  // 手がかりはあるが推定（球速の公表値の平均など）
+               | "generated"; // 手がかりがなくゲームが生成（性格、潜在能力）
+```
+
+- 球速・球種・守備力など成績だけでは分からない値は、勝手に推測して確定値にしない（§70, §88-13）。ゲームを動かすために値が必要なら `generated` として生成し、**画面上でも実データとは区別できる**ようにする（デバッグモードで出典を確認できる）
+- 実在人物の性格・ケガ歴・私生活を事実のように生成して表示しない
+
+### 12.3 成績から能力値への変換（§70）
+
+- 打撃：打席数が少ない選手は平均へ寄せる（サンプルサイズによる縮小推定）、リーグ・球場の環境を補正、年齢を考慮
+- 投球：K率・BB率・HR率から制球・球威の傾向を推定。先発・救援でスタミナの手がかりにする
+- 変換式は `packages/data` の中で完結させ、ゲームのバランス設定（§71）とは分ける
+
+### 12.4 初期世界の作り方
+
+1. 実在データパック（NPB・MLB の 2026 年開幕時点のロスターなど）を読み込む
+2. 足りない部分（アマチュア全体、少年野球人口）は生成器で作る
+3. 開始日まで「前史」を短く生成する（例：高校3年生は高校2年夏までの成績があることにする）。前史は生成されたものとして記録する
+
+---
+
+## 13. スマートフォンでの性能対策（L）
+
+| 対策 | 内容 |
+|------|------|
+| Fidelity と遅延具体化 | §6。最も効く対策。人数そのものを減らす |
+| ケイデンス | §5.2。遠い対象は月・年単位でまとめて計算 |
+| チーム単位の試合計算 | §10.2。リーグ全体の試合の大半はチームの総合力で計算 |
+| 能力値のまとめ持ち | 能力値を数値配列（Float32Array 等）で保持し、オブジェクトの数を減らす |
+| 遅延読み込み | アーカイブ人物・古い成績は SQLite に置き、画面で必要になったら読む |
+| 時分割実行 | §2.3。画面が固まらないよう処理を小分けにする |
+| 性能予算のテスト | 「1年進めるのに Node で○秒以内」を CI で検査し、悪化を検知する |
+
+**性能目標（暫定。Phase 1 で実測して確定）**
+
+- 1年分の世界の進行：中位スマホで 30 秒以内（バックグラウンド進捗表示あり）
+- 1週間分（プレイヤーが高校生、大会期間外）：1 秒以内
+- 100年分の自動シミュレーション：Node で 30 分以内
+
+---
+
+## 14. テスト設計（§73, M）
+
+| 種類 | 内容 | 例 |
+|------|------|----|
+| 単体テスト | 純粋関数の検査 | 打席結果の確率合成、身長成長曲線、入試判定 |
+| 性質ベーステスト（fast-check） | どんな入力でも守るべき性質 | 能力値が範囲外にならない、所属の期間が重ならない、確率の合計が1 |
+| 決定性テスト | 同じ seed → 同じ世界 | 10年進めた世界のハッシュが一致する |
+| 較正テスト | 統計が目標範囲に入るか | NPB 水準のリーグ打率・本塁打率・防御率が設定範囲内、高校野球の失策率が高め |
+| 長期健全性テスト | 世界が破綻しないか（§73） | 下表 |
+| 性能テスト | 時間・メモリ・セーブ容量の予算 | 1年 / 10年の処理時間、100年後のセーブ容量 |
+| セーブ互換テスト | 古い版のセーブが読めるか | 版ごとのサンプルセーブを読み込む |
+
+**長期健全性テスト（10年 / 30年 / 50年 / 100年）で毎年検査する指標**
+
+- 年齢別・水準別の選手人口が目標範囲内（増え続けない、ゼロにならない）
+- 各水準の平均能力が上がり続けない（インフレしない）
+- NPB / MLB への新人供給が毎年あり、引退者数と釣り合う
+- 「高校球児のうちプロになる割合」が目標範囲内（全員がなる／誰もなれない、にならない）
+- 各球団のロスター人数がルールの範囲内、資金が破綻しない（Phase 11 以降）
+- 学校の部員数が極端に偏らない（強豪校に全員集まらない）
+- 引退年齢の分布が自然
+
+`packages/sim-cli` で年ごとの指標を CSV に書き出し、バランス調整時に推移を確認できるようにする。
+
+---
+
+## 15. ディレクトリ構造（N）
+
+```
+baseball-life-sim/
+├─ package.json / pnpm-workspace.yaml / tsconfig.base.json
+├─ apps/
+│  └─ mobile/                     Expo アプリ
+│     ├─ app/                     expo-router の画面（home, life, baseball, world, career）
+│     ├─ components/
+│     ├─ viewmodels/              Query 結果を画面用に整形
+│     └─ bridge/                  engine-api の呼び出し、時分割実行
+├─ packages/
+│  ├─ engine/
+│  │  └─ src/
+│  │     ├─ core/                 ID型、日付、RNG、Store、Scheduler、SimSystem
+│  │     ├─ world/                World の生成・読み込み・進行ループ
+│  │     ├─ time/                 暦・ケイデンス・advance
+│  │     ├─ people/               Person, Family, 人口・生成器
+│  │     ├─ fidelity/             詳細度の昇降格、コホート、具体化
+│  │     ├─ development/          身体・技術・加齢・練習効果
+│  │     ├─ health/               疲労・コンディション・ケガ
+│  │     ├─ education/            学力・成績・入試
+│  │     ├─ life/                 プレイヤーの日常・時間配分・週間ルーティン
+│  │     ├─ orgs/                 Organization, School, Team, ロスター
+│  │     ├─ leagues/              League, Season, 日程、順位、ルール適用
+│  │     ├─ competitions/         大会形式（トーナメント・総当たり等）
+│  │     ├─ game/                 試合エンジン（UI非依存の純粋関数）
+│  │     ├─ pathway/              Opportunity, Channel, Stage, 面談、マッチング
+│  │     ├─ transactions/         ドラフト形式・FA・トレード・契約・ポスティング
+│  │     ├─ scouting/             ScoutReport、認識（Perception）
+│  │     ├─ ai/                   Controller、効用関数、DecisionTrace
+│  │     ├─ relationships/
+│  │     ├─ careers/              Membership、役割（コーチ・スカウト・GM）
+│  │     ├─ economy/              経営（Phase 11）
+│  │     ├─ history/              出来事の記録・圧縮・CareerRecord の組み立て
+│  │     ├─ news/
+│  │     ├─ events/               条件付きイベント（§78）
+│  │     └─ debug/                真の値の閲覧、トレース
+│  ├─ engine-api/                 Command / Query / Event の型と実装
+│  ├─ content/                    データ（バランス数値以外の「世界の定義」）
+│  │  ├─ rules/                   LeagueRules, CompetitionRules（年度付き）
+│  │  ├─ calendars/               CalendarTemplate
+│  │  ├─ events/                  イベント定義（条件と効果）
+│  │  ├─ interviews/              面談の質問テンプレート
+│  │  ├─ names/                   名前生成用データ
+│  │  └─ regions/                 地域・距離
+│  ├─ config/                     バランス数値（§71）
+│  │  └─ growth.ts, batting.ts, pitching.ts, fielding.ts, injuries.ts,
+│  │     education.ts, scouting.ts, career.ts, population.ts, fidelity.ts
+│  ├─ storage/                    SQLite / メモリ / Node ファイルの保存先
+│  ├─ data/                       実在データ取り込み（raw / normalized / game / adapters）
+│  └─ sim-cli/                    ヘッドレス実行・長期テスト・指標出力
+└─ docs/
+```
+
+### 条件付きイベント（§78）
+
+イベントは `content/events/` にデータとして定義し、エンジンは「条件を満たすイベントを探して発火する」だけにする。
+
+```ts
+{
+  id: "hs-scout-contact",
+  when: { cadence: "weekly", ageRange: [14, 15], calendar: "autumn",
+          condition: "perceivedBy(org).overall >= org.recruiting.threshold" },
+  weight: "...",
+  effect: [{ type: "createOpportunity", channel: "scouted", ... },
+           { type: "decisionRequired", kind: "respondToScout" }],
+  cooldown: { days: 60 }
+}
+```
+
+条件式は小さな安全な式言語（関数呼び出しと比較のみ）か、TypeScript で書いた条件関数を ID で参照する形のどちらか。Phase 2 で決める（→ 決定事項 D-10）。
+
+---
+
+## 16. 実装ロードマップ（O）
+
+### 16.1 依存関係
+
+```
+Phase 1 World Engine Prototype
+  ├─ core（ID・日付・RNG・Store・Scheduler）
+  ├─ people（生成・加齢・死去）＋ fidelity（コホート・具体化）
+  ├─ orgs（組織・チーム・所属履歴）
+  ├─ leagues（最小限：NPB/MLB の順位がチーム単位計算で毎年出る）  ← 指摘 P-06
+  ├─ population（毎年の新規流入・引退）
+  ├─ storage（SQLite / Node）
+  └─ sim-cli ＋ 長期健全性テストの土台
+        │
+Phase 2 Childhood ──── life（週間ルーティン）, education（学力の土台）, development（身体・技術）, health
+        │
+Phase 3 Junior ─────── pathway（Opportunity / Channel / Stage）初版, scouting/perception 初版, 学校・チーム検索
+        │
+Phase 4 HS Entrance ── pathway 完全版（推薦・一般・面談・専願/併願）, education（入試・内申）
+        │
+Phase 5 HS Baseball ── competitions（地方大会・全国大会）, 起用 AI, ベンチ入り競争
+        │               ※試合は打席単位の簡易版を先行導入
+Phase 6 Game Engine ── 打席→打球→守備→走塁の本格化、較正
+        │
+Phase 7 Post HS ────── 大学・社会人・独立、ドラフト（形式プラグイン）、指名漏れ
+        │
+Phase 8 NPB ────────── 一軍/二軍/育成、契約、FA、トレード、戦力外
+        │
+Phase 9 MLB/MiLB ───── 傘下階層、マイナー契約、ポスティング等
+        │
+Phase 10 Retirement ── 指導者・スカウト・GM のプロフィールと人事
+Phase 11 Club Mgmt ─── economy
+Phase 12 Historical ── 実在データパック、OB転生
+```
+
+### 16.2 Phase 1 の完了条件（案）
+
+- 架空の人物（数万人規模、Level 0〜2 の混在）を seed から生成できる
+- 世界の時計を 2026-04-01 から 100 年進められ、全員が年を取る
+- 学年が進み、卒業で所属が変わり、プロ選手が引退し、新しい子どもが毎年流入する
+- NPB / MLB（チーム単位の簡易試合）のシーズンが毎年進み、順位・優勝が記録される
+- 同じ seed で同じ結果になる（決定性テスト）
+- 長期健全性テスト（人口・年齢分布・引退）が 100 年で通る
+- 世界全体を SQLite（Node 上）に保存・読み込みできる
+- 画面は作らない（CLI と簡易ログのみ）。UI は Phase 2 で HOME / WORLD の最小限から作る
+
+### 16.3 先に作らないもの
+
+経営（Phase 11）、OB転生（§52）、1球単位の試合、MANAGER / GM / OWNER モードの画面、実在データの自動取得。ただし、これらを後から足せるように、Controller・Decision・形式プラグイン・Provenance の枠だけは Phase 1 から用意する。
