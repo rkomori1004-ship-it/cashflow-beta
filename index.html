@@ -774,6 +774,12 @@ input[type=checkbox] { accent-color: #34d399; }
 .pl-cell:nth-child(7n+4) { animation-delay: 0.11s; } .pl-cell:nth-child(7n+5) { animation-delay: 0.14s; } .pl-cell:nth-child(7n+6) { animation-delay: 0.17s; }
 .pl-cell.future { background: transparent; border: 1px dashed rgba(255,255,255,0.12); cursor: default; }
 .pl-cell.sel { box-shadow: 0 0 0 2px #fff; transform: scale(1.06); }
+.pl-cell { position: relative; }
+.pl-cell.has-inc { box-shadow: inset 0 0 0 1.5px var(--gold); }
+.pl-cell.future.has-inc { border-style: solid; border-color: rgba(252,211,77,0.55); cursor: pointer; }
+.pl-coin { position: absolute; top: -5px; right: -4px; font-size: 11px; line-height: 1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); }
+.pl-inc { color: var(--gold); }
+.pl-income-sum { font-size: 11px; color: var(--text-muted); margin: -4px 0 12px; line-height: 1.7; }
 .pl-d { font-size: 10px; opacity: 0.75; line-height: 1; }
 .pl-v { font-size: clamp(9px, 2.6vw, 12px); font-weight: 600; line-height: 1.1; white-space: nowrap; }
 @keyframes plPop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
@@ -6064,12 +6070,21 @@ function getDailyPL(year, month) {
     if (e.date && e.date.slice(0, 7) === ym) { const d = parseInt(e.date.slice(8, 10)); exp[d] = (exp[d] || 0) + e.amount; }
     else undated += e.amount;
   });
+  // 入金予定（入金予定日、なければ発生日）。記録した月に関係なく、この月に入るものを全部集める
+  const incomeDays = {};
+  ['personal', 'business'].forEach(mode => Object.values(state[mode].entries || {}).forEach(arr => (arr || []).forEach(e => {
+    if (e.type !== 'income') return;
+    const when = e.dueDate || e.date;
+    if (!when || when.slice(0, 7) !== ym) return;
+    const d = parseInt(when.slice(8, 10));
+    (incomeDays[d] = incomeDays[d] || []).push({ name: e.name, amount: e.amount, status: e.status || '入金済', mode });
+  })));
   const todayKey = getTodayKey();
   const list = [];
   for (let d = 1; d <= days; d++) {
     const key = `${ym}-${String(d).padStart(2, '0')}`;
     const spent = exp[d] || 0;
-    list.push({ d, key, dow: new Date(year, month, d).getDay(), spent, net: Math.round(perDay - spent), future: key > todayKey });
+    list.push({ d, key, dow: new Date(year, month, d).getDay(), spent, net: Math.round(perDay - spent), future: key > todayKey, incomes: incomeDays[d] || [] });
   }
   return { days, income, perDay, list, undated, loanRepaid };
 }
@@ -6087,12 +6102,15 @@ function renderDailyPL() {
     const total = past.reduce((s, x) => s + x.net, 0);
     const dows = ['日', '月', '火', '水', '木', '金', '土'];
     const lead = (pl.list[0].dow + 6) % 7; // 月曜始まり
+    const coin = x => x.incomes.length ? `<span class="pl-coin" title="入金予定">💰</span>` : '';
     const cell = x => {
-      if (x.future) return `<div class="pl-cell future" data-key="${x.key}" title="${month + 1}/${x.d} これから"><span class="pl-d">${x.d}</span></div>`;
+      if (x.future) return x.incomes.length
+        ? `<button class="pl-cell future has-inc" data-key="${x.key}" onclick="showDailyPLDetail(this,'${mode}',${x.d})" title="${month + 1}/${x.d} 入金予定あり">${coin(x)}<span class="pl-d">${x.d}</span><span class="pl-v pl-inc">+${fmtShort(x.incomes.reduce((s, i) => s + i.amount, 0)).slice(1)}</span></button>`
+        : `<div class="pl-cell future" data-key="${x.key}" title="${month + 1}/${x.d} これから"><span class="pl-d">${x.d}</span></div>`;
       const t = Math.min(1, Math.abs(x.net) / maxAbs);
       const bg = x.net === 0 ? 'rgba(255,255,255,0.05)' : `${x.net > 0 ? PL_POS : PL_NEG}${Math.round((0.22 + 0.68 * t) * 255).toString(16).padStart(2, '0')}`;
-      return `<button class="pl-cell" style="background:${bg}" data-key="${x.key}" onclick="showDailyPLDetail(this,'${mode}',${x.d})" title="${month + 1}/${x.d} ${x.net >= 0 ? '+' : '-'}${fmt(Math.abs(x.net))}">
-        <span class="pl-d">${x.d}</span><span class="pl-v">${fmtShort(x.net)}</span></button>`;
+      return `<button class="pl-cell${x.incomes.length ? ' has-inc' : ''}" style="background:${bg}" data-key="${x.key}" onclick="showDailyPLDetail(this,'${mode}',${x.d})" title="${month + 1}/${x.d} ${x.net >= 0 ? '+' : '-'}${fmt(Math.abs(x.net))}">
+        ${coin(x)}<span class="pl-d">${x.d}</span><span class="pl-v">${fmtShort(x.net)}</span></button>`;
     };
     // 週ごと（月曜始まり、月の範囲内）
     const weeks = []; let cur = null;
@@ -6120,7 +6138,11 @@ function renderDailyPL() {
         ${'<div></div>'.repeat(lead)}${pl.list.map(cell).join('')}
       </div>
       <div class="pl-detail" id="pl-detail-${mode}">日付をタップすると内訳が見られます</div>
-      <div class="pl-legend"><span><i style="background:${PL_POS}"></i>＋ 収入の日割りより使わなかった</span><span><i style="background:${PL_NEG}"></i>− 使いすぎた</span></div>
+      <div class="pl-legend"><span><i style="background:${PL_POS}"></i>＋ 収入の日割りより使わなかった</span><span><i style="background:${PL_NEG}"></i>− 使いすぎた</span><span>💰 入金予定日</span></div>
+      ${(() => { const all = pl.list.flatMap(x => x.incomes.map(i => ({ ...i, d: x.d }))); if (!all.length) return '';
+        const sum = st => all.filter(i => i.status === st).reduce((s, i) => s + i.amount, 0);
+        const parts = [['未請求', 'var(--gold)'], ['請求済', 'var(--mp)'], ['入金済', 'var(--green)']].filter(([st]) => sum(st)).map(([st, c]) => `<span style="color:${c}">${st} ${fmt(sum(st))}</span>`);
+        return `<div class="pl-income-sum">💰 ${month + 1}月の入金予定 ${all.length}件・${fmt(all.reduce((s, i) => s + i.amount, 0))}<br>${parts.join('　')}</div>`; })()}
       <div class="pl-weeks-title">週ごとの合計</div>
       ${weekRows}
       ${pl.undated ? `<div class="pl-s" style="margin-top:8px">※ 日付のない支出 ${fmt(pl.undated)} は日ごとの計算に含めていません</div>` : ''}
@@ -6136,7 +6158,11 @@ function showDailyPLDetail(btn, mode, d) {
   btn.parentElement.querySelectorAll('.pl-cell.sel').forEach(c => c.classList.remove('sel'));
   btn.classList.add('sel');
   const el = document.getElementById(`pl-detail-${mode}`);
-  el.innerHTML = `<b>${month + 1}月${d}日（${['日', '月', '火', '水', '木', '金', '土'][x.dow]}）</b>　収入の日割り ${fmt(pl.perDay)} − 支出 ${fmt(x.spent)} ＝ <b style="color:${x.net >= 0 ? '#67e8f9' : '#fda4af'}">${x.net >= 0 ? '+' : '−'}${fmt(Math.abs(x.net))}</b>`;
+  const stColor = { '未請求': 'var(--gold)', '請求済': 'var(--mp)', '入金済': 'var(--green)' };
+  const incHtml = x.incomes.map(i => `<div>💰 ${String(i.name).replace(/</g, '&lt;')} <b style="font-family:var(--mono)">${fmt(i.amount)}</b> <span style="font-size:10px;padding:0 6px;border:1px solid ${stColor[i.status] || 'var(--border)'};color:${stColor[i.status] || 'var(--text-muted)'};border-radius:99px">${i.status}</span></div>`).join('');
+  el.innerHTML = `<b>${month + 1}月${d}日（${['日', '月', '火', '水', '木', '金', '土'][x.dow]}）</b>　` +
+    (x.future ? '<span style="color:var(--text-hint)">これからの日</span>' : `収入の日割り ${fmt(pl.perDay)} − 支出 ${fmt(x.spent)} ＝ <b style="color:${x.net >= 0 ? '#67e8f9' : '#fda4af'}">${x.net >= 0 ? '+' : '−'}${fmt(Math.abs(x.net))}</b>`) +
+    (incHtml ? `<div style="margin-top:4px">${incHtml}</div>` : '');
 }
 
 // 収支タブ下部の「記録／売掛金／分析」切り替え
