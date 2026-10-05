@@ -1498,6 +1498,10 @@ input[type=checkbox] { accent-color: #34d399; }
             </table>
           </div>
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-muted);cursor:pointer;flex-basis:100%">
+              <input type="checkbox" id="csv-keep-balance" style="width:18px;height:18px">
+              口座残高は動かさない（記録だけ追加。残高をすでに合わせてある期間を取り込むとき）
+            </label>
             <button class="csv-btn" id="csv-register-btn" onclick="registerCsvEntries()" style="border-color:var(--gold);color:var(--gold)">✔ 登録する（<span id="csv-register-count">0</span>件）</button>
             <span id="csv-register-msg" style="font-size:12px;color:var(--green)"></span>
           </div>
@@ -4707,7 +4711,7 @@ function updateAccountSelects() {
     const el = document.getElementById(id);
     if (el) {
       const v = el.value;
-      el.innerHTML = incOpts;
+      el.innerHTML = incOpts + '<option value="none">記録だけ（口座残高は動かさない）</option>';
       if ([...el.options].some(o => o.value === v)) el.value = v;
     }
   });
@@ -4720,7 +4724,7 @@ function updateAccountSelects() {
     const el = document.getElementById(id);
     if (el) {
       const v = el.value;
-      el.innerHTML = expOpts;
+      el.innerHTML = expOpts + '<option value="none">記録だけ（口座残高は動かさない）</option>';
       if ([...el.options].some(o => o.value === v)) el.value = v;
     }
   });
@@ -5918,6 +5922,30 @@ addEntry = function(mode, type) {
     } catch (e) { /* 演出の失敗で記録処理を止めない */ }
   }
 };
+
+// ---- CSV取り込み: 口座残高は動かさないオプション ----
+// registerCsvEntries は後ろの<script>で定義されるので、すべて読み込んでから包む
+window.addEventListener('load', () => {
+  if (typeof registerCsvEntries !== 'function') return;
+  const _registerCsvEntriesOriginal = registerCsvEntries;
+  registerCsvEntries = async function () {
+    const keep = document.getElementById('csv-keep-balance');
+    if (!keep || !keep.checked) return _registerCsvEntriesOriginal.apply(this, arguments);
+    const before = {}; (loadBalance().accounts || []).forEach(a => { before[a.id] = a.balance; });
+    const oldIds = new Set();
+    ['personal', 'business'].forEach(m => Object.values(state[m].entries || {}).forEach(arr => (arr || []).forEach(e => oldIds.add(e.id))));
+    const result = await _registerCsvEntriesOriginal.apply(this, arguments);
+    const b = loadBalance();
+    (b.accounts || []).forEach(a => { if (a.id in before) a.balance = before[a.id]; });
+    saveBalance(b);
+    ['personal', 'business'].forEach(m => Object.values(state[m].entries || {}).forEach(arr => (arr || []).forEach(e => {
+      if (!oldIds.has(e.id) && e.accountId != null) e.balanceApplied = false;
+    })));
+    saveState();
+    renderAll();
+    return result;
+  };
+});
 
 // ---- 画面の切り替え状態（端末ごとの表示設定。同期はしない） ----
 function uiPrefGet(key, def) { try { return localStorage.getItem(key) || def; } catch(e) { return def; } }
