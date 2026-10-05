@@ -739,6 +739,7 @@ input[type=checkbox] { accent-color: #34d399; }
 .metrics .metric-label { margin-bottom: 2px; }
 .metrics .metric-value { font-size: clamp(14px, 4.2vw, 22px); white-space: nowrap; }
 .ledger-views { margin-bottom: 12px; }
+.undo-item { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
 /* クレジットカード */
 .cc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cc-k { font-size: 11px; color: var(--text-muted); }
@@ -807,6 +808,7 @@ input[type=checkbox] { accent-color: #34d399; }
       <div class="header-sub" id="today-label"></div>
       <button class="sub-menu-btn" onclick="openPurchaseCheckModal()" title="買っていい？チェック" style="border-color:var(--gold);color:var(--gold)">🏪</button>
       <button class="sub-menu-btn" onclick="openSearchModal()" title="過去の支出を検索" style="border-color:var(--mp);color:var(--mp)">🔍</button>
+      <button class="sub-menu-btn" onclick="openUndoHistory()" title="元に戻す（操作の履歴）">↩</button>
       <button class="sub-menu-btn" onclick="toggleSubMenu()" title="メニュー" id="sub-menu-toggle">☰</button>
     </div>
   </header>
@@ -1553,6 +1555,15 @@ input[type=checkbox] { accent-color: #34d399; }
 
 
 
+<div class="modal-overlay" id="undo-modal" onclick="if(event.target===this)closeUndoHistory()">
+  <div class="modal">
+    <div class="modal-title">↩ 操作の履歴</div>
+    <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">間違えて入力・削除したときは、その操作の「↩」を押すと、操作する前の状態に戻せます（新しい順・この端末の直近30件）。</div>
+    <div id="undo-history-list" style="max-height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+    <div class="modal-actions"><button class="modal-btn cancel" onclick="closeUndoHistory()">閉じる</button></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="reward-modal" onclick="if(event.target===this)closeRewardCalc()">
   <div class="modal">
     <div class="modal-title">🧮 業務委託の報酬計算</div>
@@ -1658,6 +1669,161 @@ const now = new Date();
 
 // State
 let state = loadState();
+
+// ---- 操作の履歴（あとから選んで元に戻す） ----
+// データを書き換える直前の状態を自動で保存しておき、一覧から「ここまで戻す」で復元する。
+// 履歴はこの端末だけに保存（クラウド同期しない）。最大30件。
+const UNDO_KEY = 'cf-undo-history-v1';
+const UNDO_MAX = 30;
+const UNDO_DATA_KEYS = ['cf-manager-v1', 'cf-balance-v1', 'cf-budget-v1', 'cf-level-v1', 'cf-unpaid-v1', 'cf-templates-v1', 'cf-goals-v1',
+  'cf-allocation-v1', 'cf-rewards-v1', 'cf-factoring-v1', 'cf-factoring-companies-v1', 'cf-factoring-cases-v1', 'cf-savings-goal-v1',
+  'cf-due-paid-v1', 'cf-reward-presets-v1'];
+let _undoPending = null;      // 今の操作で最初に書き換える前の状態
+let _undoRestoring = false;
+let _lastActionLabel = '', _lastActionAt = 0;
+
+// 押したボタンの名前を、履歴の見出しに使う
+document.addEventListener('click', e => {
+  const btn = e.target.closest('button, .sub-menu-item, .ctx-item');
+  if (!btn) return;
+  const label = (btn.getAttribute('title') || btn.textContent || '').replace(/\s+/g, ' ').trim();
+  if (label) { _lastActionLabel = label.slice(0, 30); _lastActionAt = Date.now(); }
+}, true);
+
+function undoSnapshot() {
+  const snap = {};
+  UNDO_DATA_KEYS.forEach(k => { snap[k] = localStorage.getItem(k); });
+  return snap;
+}
+function undoLoadHistory() {
+  try { return JSON.parse(localStorage.getItem(UNDO_KEY)) || []; } catch (e) { return []; }
+}
+function undoSaveHistory(list) {
+  // 容量が足りないときは古いものから消す
+  while (list.length) {
+    try { localStorage.setItem(UNDO_KEY, JSON.stringify(list)); return; } catch (e) { list.pop(); }
+  }
+  try { localStorage.removeItem(UNDO_KEY); } catch (e) {}
+}
+function undoPack(snap) {
+  const raw = JSON.stringify(snap);
+  return (window.LZString && LZString.compressToUTF16) ? { z: LZString.compressToUTF16(raw) } : { raw };
+}
+function undoUnpack(item) {
+  try { return JSON.parse(item.z ? LZString.decompressFromUTF16(item.z) : item.raw); } catch (e) { return null; }
+}
+
+// 変更前後を比べて、何が変わったかを短い文にする
+function undoDescribe(before, after) {
+  const parse = (snap, k, def) => { try { return JSON.parse(snap[k]) || def; } catch (e) { return def; } };
+  const lines = [];
+  const flat = st => { const m = {}; ['personal', 'business'].forEach(mode => Object.values(((st || {})[mode] || {}).entries || {}).forEach(arr => (arr || []).forEach(e => { m[e.id] = e; }))); return m; };
+  const eb = flat(parse(before, 'cf-manager-v1', {})), ea = flat(parse(after, 'cf-manager-v1', {}));
+  const yen = n => fmt(n);
+  Object.keys(ea).filter(id => !eb[id]).slice(0, 3).forEach(id => lines.push(`＋ ${ea[id].name} ${ea[id].type === 'income' ? '+' : '-'}${yen(ea[id].amount)} を記録`));
+  Object.keys(eb).filter(id => !ea[id]).slice(0, 3).forEach(id => lines.push(`− ${eb[id].name} ${yen(eb[id].amount)} を削除`));
+  Object.keys(ea).filter(id => eb[id] && JSON.stringify(eb[id]) !== JSON.stringify(ea[id])).slice(0, 3).forEach(id => {
+    const b = eb[id], a = ea[id];
+    lines.push(b.amount !== a.amount ? `✎ ${a.name} ${yen(b.amount)} → ${yen(a.amount)}` : b.name !== a.name ? `✎ ${b.name} → ${a.name}` : `✎ ${a.name} を変更`);
+  });
+  const bb = parse(before, 'cf-balance-v1', {}), ba = parse(after, 'cf-balance-v1', {});
+  const diffList = (key, label, valueKey) => {
+    const mb = {}, ma = {}; (bb[key] || []).forEach(x => mb[x.id] = x); (ba[key] || []).forEach(x => ma[x.id] = x);
+    Object.keys(ma).filter(id => !mb[id]).forEach(id => lines.push(`＋ ${label}「${ma[id].name}」を追加`));
+    Object.keys(mb).filter(id => !ma[id]).forEach(id => lines.push(`− ${label}「${mb[id].name}」を削除`));
+    Object.keys(ma).filter(id => mb[id] && valueKey && mb[id][valueKey] !== ma[id][valueKey]).forEach(id => lines.push(`${label} ${ma[id].name} ${yen(mb[id][valueKey])} → ${yen(ma[id][valueKey])}`));
+  };
+  diffList('accounts', '口座', 'balance'); diffList('loans', '借金', 'balance'); diffList('cards', 'カード', null);
+  const ub = parse(before, 'cf-unpaid-v1', []), ua = parse(after, 'cf-unpaid-v1', []);
+  ua.filter(x => !ub.some(y => y.id === x.id)).forEach(x => lines.push(`＋ 未払い「${x.name}」${yen(x.amount)}`));
+  ub.filter(x => !ua.some(y => y.id === x.id)).forEach(x => lines.push(`− 未払い「${x.name}」${yen(x.amount)}`));
+  const fb = parse(before, 'cf-factoring-cases-v1', []), fa = parse(after, 'cf-factoring-cases-v1', []);
+  fa.filter(x => !fb.some(y => y.id === x.id)).forEach(x => lines.push(`＋ ファクタリング案件 ${yen(x.invoiceAmount)}`));
+  fb.filter(x => !fa.some(y => y.id === x.id)).forEach(x => lines.push(`− ファクタリング案件 ${yen(x.invoiceAmount)}`));
+  fa.filter(x => { const o = fb.find(y => y.id === x.id); return o && o.status !== x.status; }).forEach(x => lines.push(`ファクタリング ${x.companyName} を${x.status === 'received' ? '入金済' : x.status === 'repaid' ? '返済済' : '入金待ち'}に`));
+  if (!lines.length) {
+    const changed = UNDO_DATA_KEYS.filter(k => before[k] !== after[k]);
+    const names = { 'cf-budget-v1': '予算', 'cf-goals-v1': '目標', 'cf-templates-v1': '固定費テンプレート', 'cf-allocation-v1': '家事按分', 'cf-savings-goal-v1': '貯蓄目標',
+      'cf-due-paid-v1': '支払い予定のチェック', 'cf-reward-presets-v1': '報酬計算の設定', 'cf-factoring-companies-v1': 'ファクタリング会社', 'cf-level-v1': '記録の日数', 'cf-balance-v1': 'カード・口座の設定' };
+    const n = changed.map(k => names[k]).filter(Boolean);
+    lines.push(n.length ? `${[...new Set(n)].join('・')}を変更` : 'データを変更');
+  }
+  return lines.slice(0, 4);
+}
+
+// 書き込みのたびに呼ぶ：同じ操作の中で最初の書き込みの直前だけ保存し、操作が終わったら履歴に積む
+function undoBeforeWrite(key, value) {
+  if (!window.__undoReady || _undoRestoring || window.__isApplyingRemoteSync) return;
+  if (!UNDO_DATA_KEYS.includes(key)) return;
+  if (localStorage.getItem(key) === value) return;
+  if (_undoPending) return;
+  _undoPending = { before: undoSnapshot(), label: Date.now() - _lastActionAt < 2000 ? _lastActionLabel : '' };
+  setTimeout(undoCommit, 0);
+}
+function undoCommit() {
+  const p = _undoPending; _undoPending = null;
+  if (!p) return;
+  const after = undoSnapshot();
+  if (UNDO_DATA_KEYS.every(k => p.before[k] === after[k])) return;
+  const list = undoLoadHistory();
+  list.unshift({ id: Date.now(), at: new Date().toISOString(), label: p.label || '自動の処理', desc: undoDescribe(p.before, after), ...undoPack(p.before) });
+  undoSaveHistory(list.slice(0, UNDO_MAX));
+}
+(function installUndoHook() {
+  // Storage.prototype を包む（localStorage への書き込みだけ対象）。クラウド同期の仕組みもこの上から包むので両立する
+  const proto = Object.getPrototypeOf(localStorage);
+  const origSet = proto.setItem, origRemove = proto.removeItem;
+  proto.setItem = function (key, value) { if (this === window.localStorage) undoBeforeWrite(key, String(value)); return origSet.call(this, key, value); };
+  proto.removeItem = function (key) { if (this === window.localStorage && this.getItem(key) !== null) undoBeforeWrite(key, null); return origRemove.call(this, key); };
+})();
+window.addEventListener('load', () => { window.__undoReady = true; });
+
+function openUndoHistory() {
+  const list = undoLoadHistory();
+  const el = document.getElementById('undo-history-list');
+  el.innerHTML = list.length ? list.map((h, i) => {
+    const d = new Date(h.at);
+    const when = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return `<div class="undo-item">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;color:var(--text-hint)">${when}　${String(h.label).replace(/</g, '&lt;')}</div>
+        ${(h.desc || []).map(t => `<div style="font-size:12px">${String(t).replace(/</g, '&lt;')}</div>`).join('')}
+      </div>
+      <button class="add-toggle" onclick="restoreUndo(${h.id})" style="white-space:nowrap">${i === 0 ? '↩ 取り消す' : '↩ ここまで戻す'}</button>
+    </div>`;
+  }).join('') : '<div class="empty">まだ操作の履歴はありません</div>';
+  document.getElementById('undo-modal').classList.add('open');
+}
+function closeUndoHistory() { document.getElementById('undo-modal').classList.remove('open'); }
+
+function restoreUndo(id) {
+  const list = undoLoadHistory();
+  const idx = list.findIndex(h => h.id === id);
+  if (idx < 0) return;
+  const h = list[idx];
+  const msg = idx === 0
+    ? `「${(h.desc || [])[0] || h.label}」を取り消しますか？`
+    : `この操作より前の状態に戻します。\nこれより後の ${idx} 件の操作も取り消されます。よろしいですか？`;
+  if (!confirm(msg)) return;
+  const snap = undoUnpack(h);
+  if (!snap) { alert('この履歴は読み込めませんでした'); return; }
+  // 戻す前の状態も履歴に残しておく（「やっぱり戻さない」ができるように）
+  const current = undoSnapshot();
+  _undoRestoring = true;
+  try {
+    UNDO_DATA_KEYS.forEach(k => { if (snap[k] === null || snap[k] === undefined) localStorage.removeItem(k); else localStorage.setItem(k, snap[k]); });
+  } finally { _undoRestoring = false; }
+  const rest = list.slice(idx + 1);
+  rest.unshift({ id: Date.now(), at: new Date().toISOString(), label: '↩ 元に戻した', desc: [`「${(h.desc || [])[0] || h.label}」${idx ? `など${idx + 1}件` : ''}を取り消し（この行で取り消し前に戻せます）`], ...undoPack(current) });
+  undoSaveHistory(rest.slice(0, UNDO_MAX));
+  state = loadState();
+  closeUndoHistory();
+  renderAll();
+  const toast = document.createElement('div');
+  toast.className = 'toast-pop'; toast.textContent = '↩ 元に戻しました';
+  document.body.appendChild(toast); setTimeout(() => toast.remove(), 1900);
+}
+
 
 function loadState() {
   try {
