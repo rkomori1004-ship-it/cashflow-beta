@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cf-beta-v1';
+const CACHE_NAME = 'cf-beta-v2'; // 更新したら番号を上げる（古いキャッシュを確実に消すため）
 const ASSETS = [
   './index.html',
   './manifest.json'
