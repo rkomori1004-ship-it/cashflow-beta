@@ -934,6 +934,7 @@ input[type=checkbox] { accent-color: #34d399; }
       <button class="nav-btn" onclick="changeMonth('business',1)">›</button>
     </div>
     <div class="metrics" id="business-metrics"></div>
+    <div id="unbilled-fix"></div>
     <div class="card io-exp" id="business-io-card">
       <div class="card-head">
         <div class="card-title">✏ 記録する</div>
@@ -2425,8 +2426,10 @@ function addEntry(mode, type) {
     const accId = parseInt(rawVal.slice(4));
     entry.accountId = accId;
     entry.accountName = accEl.options[accEl.selectedIndex]?.text.replace('🏦','').split('（')[0].trim() || '';
-    // 支払済み（または収入）の場合のみ、その場で口座残高に反映する。未払いならまだ反映しない
-    if (entry.paid !== false) {
+    // 支払済み（または入金済みの収入）の場合のみ、その場で口座残高に反映する。
+    // 未払いの支出や、未請求・請求済の売上はまだ反映しない（入金済にしたときに反映）
+    const notYetReceived = isInc && entry.status && entry.status !== '入金済';
+    if (entry.paid !== false && !notYetReceived) {
       const b = loadBalance();
       const acc = b.accounts.find(a => a.id === accId);
       if (acc) { acc.balance += isInc ? amount : -amount; saveBalance(b); }
@@ -3139,10 +3142,11 @@ function saveEdit() {
   const oldAccId = entry.accountId || null;
   const sign = entry.type === 'income' ? 1 : -1;
 
-  // 支払済みチェック（支出のみ存在）。収入は常に「反映済み」として扱う
+  // 支払済みチェック（支出のみ存在）。収入は入金済み（ステータスなし＝入金済み扱い）のときだけ口座に反映する
+  const newStatus = entry.status !== undefined ? document.getElementById('edit-status').value : undefined;
   const newPaid = entry.type === 'expense'
     ? document.getElementById('edit-paid').checked
-    : true;
+    : (newStatus === undefined || newStatus === '入金済');
 
   // 「実際に残高へ反映されていたか」を旧・新それぞれ判定
   const wasApplied = !!oldAccId && entry.balanceApplied !== false;
@@ -4436,6 +4440,88 @@ function runSearch() {
 }
 
 // ---- 売掛金管理 ----
+// ---- 売掛金: 入金済みにして口座へ反映 ----
+// 入金前（未請求・請求済）の売上は口座残高に入れない。入金済みにした時点で入金先の口座に足す
+function findBusinessEntry(id) {
+  for (const [key, arr] of Object.entries(state.business.entries || {})) {
+    const i = (arr || []).findIndex(e => e.id === id);
+    if (i >= 0) return { key, arr, i, e: arr[i] };
+  }
+  return null;
+}
+function markReceivableReceived(id) {
+  const f = findBusinessEntry(id);
+  if (!f) return;
+  const e = f.e, before = { status: e.status, balanceApplied: e.balanceApplied };
+  let applied = false;
+  if (e.accountId != null && e.balanceApplied === false) {
+    const b = loadBalance();
+    const acc = (b.accounts || []).find(a => a.id === e.accountId);
+    if (acc) { acc.balance += e.amount; saveBalance(b); applied = true; }
+  }
+  e.status = '入金済';
+  if (applied) e.balanceApplied = true;
+  saveState();
+  renderAll();
+  showUndoToast(`「${e.name}」を入金済にしました${applied ? `（${e.accountName || '口座'}に +${fmt(e.amount)}）` : ''}`, () => {
+    const g = findBusinessEntry(id);
+    if (!g) return;
+    if (applied) {
+      const b = loadBalance();
+      const acc = (b.accounts || []).find(a => a.id === g.e.accountId);
+      if (acc) { acc.balance -= g.e.amount; saveBalance(b); }
+    }
+    g.e.status = before.status; g.e.balanceApplied = before.balanceApplied;
+    saveState();
+    renderAll();
+  });
+}
+
+// 以前の仕様で、入金前なのに口座へ足されていた売上（status が入金済以外で balanceApplied が true）
+function findUnbilledApplied() {
+  let ok = [];
+  try { ok = JSON.parse(localStorage.getItem('cf-ui-unbilled-ok') || '[]'); } catch (e) {}
+  const out = [];
+  Object.values(state.business.entries || {}).forEach(arr => (arr || []).forEach(e => {
+    if (e.type === 'income' && e.status && e.status !== '入金済' && e.accountId != null && e.balanceApplied !== false && !ok.includes(e.id)) out.push(e);
+  }));
+  return out;
+}
+function renderUnbilledFix() {
+  const el = document.getElementById('unbilled-fix');
+  if (!el) return;
+  const list = findUnbilledApplied();
+  if (!list.length) { el.innerHTML = ''; return; }
+  const total = list.reduce((s, e) => s + e.amount, 0);
+  el.innerHTML = `
+    <div class="card" style="border-color:rgba(252,211,77,0.45)">
+      <div style="font-size:13px;margin-bottom:6px">⚠ <b>入金前なのに口座残高に入っている売上</b>が ${list.length}件（${fmt(total)}）あります</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px">以前は未請求・請求済でも記録した時点で口座に足していました。口座から外すと、入金済にしたときに改めて口座へ入ります。<br>${list.slice(0, 5).map(e => `・${String(e.name).replace(/</g, '&lt;')}（${e.status}・${e.accountName || '口座'}）${fmt(e.amount)}`).join('<br>')}${list.length > 5 ? `<br>ほか${list.length - 5}件` : ''}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="add-toggle" onclick="fixUnbilledApplied()" style="color:var(--gold);border-color:var(--gold)">口座から外す</button>
+        <button class="add-toggle" onclick="dismissUnbilledApplied()" style="color:var(--text-muted);border-color:var(--border)">このままにする</button>
+      </div>
+    </div>`;
+}
+function fixUnbilledApplied() {
+  const list = findUnbilledApplied();
+  if (!list.length) return;
+  const b = loadBalance();
+  list.forEach(e => { const acc = (b.accounts || []).find(a => a.id === e.accountId); if (acc) acc.balance -= e.amount; e.balanceApplied = false; });
+  saveBalance(b);
+  saveState();
+  renderAll();
+  const t = document.createElement('div'); t.className = 'toast-pop'; t.textContent = `${list.length}件を口座残高から外しました（↩ で元に戻せます）`;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 2200);
+}
+function dismissUnbilledApplied() {
+  let ok = [];
+  try { ok = JSON.parse(localStorage.getItem('cf-ui-unbilled-ok') || '[]'); } catch (e) {}
+  findUnbilledApplied().forEach(e => ok.push(e.id));
+  try { localStorage.setItem('cf-ui-unbilled-ok', JSON.stringify(ok)); } catch (e) {}
+  renderUnbilledFix();
+}
+
 function renderReceivables() {
   const el = document.getElementById('receivables-list');
   const totalEl = document.getElementById('receivables-total');
@@ -4461,6 +4547,7 @@ function renderReceivables() {
       <span class="entry-cat ${e.status==='請求済'?'status-billed':'cat-exp'}" style="border:1px solid;padding:2px 8px;font-size:10px">${e.status}</span>
       <span class="entry-name">${e.name}${e.dueDate ? `<span class="acc-badge" style="border-color:${overdue?'var(--red)':'var(--mp)'};color:${overdue?'var(--red)':'var(--mp)'}">${e.dueDate}${overdue?' 期限超過':urgent?` あと${daysUntil}日`:''}</span>` : ''}</span>
       <span class="entry-amount inc">${fmt(e.amount)}</span>
+      <button class="add-toggle" onclick="markReceivableReceived(${e.id})" title="入金済にする" style="font-size:11px;padding:3px 8px;white-space:nowrap">✓ 入金済</button>
     </div>`;
   }).join('') : '<div class="empty">未入金の売掛金はありません</div>';
 
@@ -5792,6 +5879,7 @@ function renderAll() {
   renderTodaySpendable();
   renderDailyPL();
   renderLoanRepaySummary();
+  renderUnbilledFix();
   if (typeof animateMetricValues === 'function') animateMetricValues();
 }
 
