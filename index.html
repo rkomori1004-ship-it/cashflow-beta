@@ -1041,6 +1041,11 @@ input[type=checkbox] { accent-color: #34d399; }
       <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">今月の収入を日数で割った「1日あたりの収入」と、その日の支出を比べます</div>
       <div class="daily-pl" data-mode="analysis"></div>
     </div>
+    <div class="card">
+      <div class="card-title" style="margin-bottom:4px">🏦 借金の返済（別枠）</div>
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:12px">返済は「使ったお金」ではないので、毎日の＋／−や週次・推移の支出とは分けて集計しています</div>
+      <div id="loan-repay-summary"></div>
+    </div>
     <div class="sub-tabs analysis-views">
       <button class="sub-tab active" data-aview="personal" onclick="setAnalysisView('personal')">🏠 家計</button>
       <button class="sub-tab" data-aview="business" onclick="setAnalysisView('business')">💼 仕事</button>
@@ -1053,8 +1058,9 @@ input[type=checkbox] { accent-color: #34d399; }
     <div class="card">
       <div class="card-title">収支推移（6ヶ月）</div>
       <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>収入</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>支出</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#0891b2"></div>収入</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#e11d48"></div>支出</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div>借金返済（別枠）</div>
       </div>
       <div class="chart-wrap"><canvas id="personal-chart"></canvas></div>
     </div>
@@ -1072,8 +1078,9 @@ input[type=checkbox] { accent-color: #34d399; }
     <div class="card">
       <div class="card-title">売上・経費推移（6ヶ月）</div>
       <div class="legend">
-        <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>売上</div>
-        <div class="legend-item"><div class="legend-dot" style="background:#fb7185"></div>経費</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#0891b2"></div>売上</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#e11d48"></div>経費</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#7c3aed"></div>借金返済（別枠）</div>
       </div>
       <div class="chart-wrap"><canvas id="business-chart"></canvas></div>
     </div>
@@ -1219,7 +1226,7 @@ input[type=checkbox] { accent-color: #34d399; }
         <button class="add-btn red" onclick="addLoan()" title="追加">+</button>
       </div>
       </div>
-      <div class="entry-list" id="loan-list"></div>
+      <div class="entry-list" id="loan-list" style="max-height:none"></div>
       <details class="inner-details">
         <summary>🎯 借金完済シミュレーター</summary>
         <div id="payoff-sim"></div>
@@ -1959,6 +1966,14 @@ function markUnpaidDone(id) {
   }
   saveUnpaid(list.filter(u => u.id !== id));
 
+  // ローン紐付けなら借金の残高も減らす
+  let loanApplied = false;
+  if (item.loanId) {
+    const b = loadBalance();
+    const loan = (b.loans || []).find(l => l.id === item.loanId);
+    if (loan) { loan.balance = Math.max(0, loan.balance - item.amount); saveBalance(b); loanApplied = true; }
+  }
+
   // 家計に支出記録として追加する（今日の日付で）
   const catIcon = { 'クレジットカード':'💳', 'ローン・借金':'📋', '公共料金':'💡', '税金':'🏛️', 'その他':'📝' };
   const newEntry = {
@@ -1967,9 +1982,10 @@ function markUnpaidDone(id) {
     name: item.linkName ? `${item.name}（${item.linkName}）` : item.name,
     amount: item.amount,
     type: 'expense',
-    cat: 'その他',
+    cat: item.loanId ? 'ローン・借金' : 'その他',
     paid: true
   };
+  if (loanApplied) { newEntry.loanId = item.loanId; newEntry.loanRepay = true; }
   if (item.accountId) {
     newEntry.accountId = item.accountId;
     newEntry.accountName = item.accountName;
@@ -1990,6 +2006,11 @@ function markUnpaidDone(id) {
       const b = loadBalance();
       const acc = b.accounts.find(a => a.id === item.accountId);
       if (acc) { acc.balance += item.amount; saveBalance(b); }
+    }
+    if (loanApplied) {
+      const b2 = loadBalance();
+      const loan = (b2.loans || []).find(l => l.id === item.loanId);
+      if (loan) { loan.balance += item.amount; saveBalance(b2); }
     }
     // 追加した家計の記録も取り消す
     const curPEntries = getEntries('personal', year, month).filter(e => e.id !== newEntry.id);
@@ -2841,6 +2862,13 @@ function ctxDelete() {
     const acc = b.accounts.find(a => a.id === entry.accountId);
     if (acc) { acc.balance += (entry.type === 'income' ? -entry.amount : entry.amount); saveBalance(b); balanceReversed = true; }
   }
+  // 借金の返済の記録なら、借金の残高も元に戻す
+  let loanReversed = false;
+  if (entry.loanRepay === true && entry.loanId != null) {
+    const b = loadBalance();
+    const loan = (b.loans || []).find(l => l.id === entry.loanId);
+    if (loan) { loan.balance += entry.amount; saveBalance(b); loanReversed = true; }
+  }
   setEntries(mode, year, month, getEntries(mode, year, month).filter(e => e.id !== id));
   closeCtxMenu();
   renderAll();
@@ -2853,6 +2881,11 @@ function ctxDelete() {
       const b = loadBalance();
       const acc = b.accounts.find(a => a.id === entry.accountId);
       if (acc) { acc.balance += (entry.type === 'income' ? entry.amount : -entry.amount); saveBalance(b); }
+    }
+    if (loanReversed) {
+      const b = loadBalance();
+      const loan = (b.loans || []).find(l => l.id === entry.loanId);
+      if (loan) { loan.balance = Math.max(0, loan.balance - entry.amount); saveBalance(b); }
     }
     renderAll();
   });
@@ -3067,15 +3100,16 @@ function getMonthRange(baseYear, baseMonth, count) {
 const charts = {};
 function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
 
-function renderBarChart(id, labels, ds1, ds2, label1='収入', label2='支出') {
+function renderBarChart(id, labels, ds1, ds2, label1='収入', label2='支出', ds3=null) {
   destroyChart(id);
   const ctx = document.getElementById(id);
   if (!ctx) return;
   charts[id] = new Chart(ctx, {
     type: 'bar',
     data: { labels, datasets: [
-      { label: label1, data: ds1, backgroundColor: '#34d399', borderRadius: 6, borderSkipped: false },
-      { label: label2, data: ds2, backgroundColor: '#fb7185', borderRadius: 6, borderSkipped: false }
+      { label: label1, data: ds1, backgroundColor: '#0891b2', borderRadius: 6, borderSkipped: false },
+      { label: label2, data: ds2, backgroundColor: '#e11d48', borderRadius: 6, borderSkipped: false },
+      ...(ds3 && ds3.some(v => v > 0) ? [{ label: '借金返済', data: ds3, backgroundColor: '#7c3aed', borderRadius: 6, borderSkipped: false }] : [])
     ]},
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -3539,9 +3573,10 @@ function renderWeeklyForMode(mode, elId) {
   const el = document.getElementById(elId);
   if (!el) return;
   const { month, year } = state[mode];
-  const entries = getEntries(mode, year, month);
-  const rows = buildWeekRows(entries, year, month);
-  el.innerHTML = weeklyTableHTML(rows);
+  const all = getEntries(mode, year, month);
+  const rows = buildWeekRows(all.filter(e => !isLoanRepay(e)), year, month);
+  const repaid = all.filter(isLoanRepay).reduce((s, e) => s + e.amount, 0);
+  el.innerHTML = weeklyTableHTML(rows) + (repaid ? `<div class="pl-s" style="margin-top:6px">※ 借金の返済 ${fmt(repaid)} は別枠のため含めていません</div>` : '');
 }
 
 function renderWeeklyOverview() {
@@ -3553,8 +3588,9 @@ function renderWeeklyOverview() {
   const pEntries = getEntries('personal', py, pm);
   const bEntries = getEntries('business', by, bm);
   const allEntries = [...pEntries, ...bEntries];
-  const rows = buildWeekRows(allEntries, py, pm);
-  el.innerHTML = weeklyTableHTML(rows);
+  const rows = buildWeekRows(allEntries.filter(e => !isLoanRepay(e)), py, pm);
+  const repaid = allEntries.filter(isLoanRepay).reduce((s, e) => s + e.amount, 0);
+  el.innerHTML = weeklyTableHTML(rows) + (repaid ? `<div class="pl-s" style="margin-top:6px">※ 借金の返済 ${fmt(repaid)} は別枠のため含めていません</div>` : '');
 }
 
 // ---- 年間サマリー ----
@@ -4980,6 +5016,116 @@ function saveAccountEdit(id) {
   }
 }
 
+// ---- 借金の返済 ----
+// 返済の記録（ローン紐付けの支出）。分析では普通の支出と分けて「別枠」で扱う
+function isLoanRepay(e) { return e && e.type === 'expense' && (e.loanRepay === true || e.loanId != null); }
+
+function openLoanRepay(id) {
+  const b = loadBalance();
+  const l = (b.loans || []).find(x => x.id === id);
+  const el = document.getElementById(`loan-repay-${id}`);
+  if (!l || !el) return;
+  if (el.innerHTML) { el.innerHTML = ''; return; }
+  const def = Math.min(l.monthly || l.balance, l.balance);
+  el.innerHTML = `
+    <div class="add-panel open" style="margin:8px 0 0">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field"><label>返済額（円）</label><input type="number" id="lrepay-amount-${id}" value="${def}" oninput="previewLoanRepay(${id})"></div>
+        <div class="field"><label>返済日</label><input type="date" id="lrepay-date-${id}" value="${getTodayKey()}"></div>
+        <div class="field" style="grid-column:span 2"><label>支払い元の口座</label>
+          <select id="lrepay-acc-${id}">${(b.accounts || []).map(a => `<option value="${a.id}">🏦 ${a.name}（${fmt(a.balance)}）</option>`).join('')}<option value="">口座からは引かない</option></select></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <span id="lrepay-preview-${id}" class="cc-s"></span>
+        <div style="display:flex;gap:6px">
+          <button class="add-btn green" onclick="recordLoanRepayment(${id})" style="height:32px;width:auto;padding:0 14px;font-size:13px;margin-top:0">返済を記録</button>
+          <button class="del-btn" onclick="openLoanRepay(${id})" title="閉じる">×</button>
+        </div>
+      </div>
+    </div>`;
+  previewLoanRepay(id);
+}
+function previewLoanRepay(id) {
+  const l = (loadBalance().loans || []).find(x => x.id === id);
+  const el = document.getElementById(`lrepay-preview-${id}`);
+  if (!l || !el) return;
+  const v = parseFloat(document.getElementById(`lrepay-amount-${id}`).value) || 0;
+  el.textContent = v > 0 ? `残高 ${fmt(l.balance)} → ${fmt(Math.max(0, l.balance - v))}${v >= l.balance ? '（完済！🎉）' : ''}` : '';
+}
+
+function recordLoanRepayment(id) {
+  const b = loadBalance();
+  const l = (b.loans || []).find(x => x.id === id);
+  if (!l) return;
+  const amount = parseFloat(document.getElementById(`lrepay-amount-${id}`).value);
+  const date = document.getElementById(`lrepay-date-${id}`).value || getTodayKey();
+  const accId = parseInt(document.getElementById(`lrepay-acc-${id}`).value);
+  if (!(amount > 0)) return;
+  const acc = (b.accounts || []).find(a => a.id === accId);
+  const beforeLoan = l.balance;
+  l.balance = Math.max(0, l.balance - amount);
+  if (acc) acc.balance -= amount;
+  saveBalance(b);
+  // 家計の支出として記録（返済日の月）
+  const [y, m] = date.split('-').map(Number);
+  const entry = { id: Date.now(), date, name: `${l.name} 返済`, amount, type: 'expense', cat: 'ローン・借金',
+    paid: true, loanId: id, loanRepay: true, loanBalanceBefore: beforeLoan };
+  if (acc) { entry.accountId = acc.id; entry.accountName = acc.name; entry.balanceApplied = true; }
+  const arr = getEntries('personal', y, m - 1); arr.unshift(entry); setEntries('personal', y, m - 1, arr);
+  // 今月の支払い予定のチェックも付ける
+  const dueKey = `${date.slice(0, 7)}:loan:${id}`;
+  const duePaid = loadDuePaid(); const hadDue = !!duePaid[dueKey];
+  if (!hadDue) { duePaid[dueKey] = true; localStorage.setItem(DUE_PAID_KEY, JSON.stringify(duePaid)); }
+  renderAll();
+  showUndoToast(`${l.name} に ${fmt(amount)} 返済しました（残高 ${fmt(l.balance)}）`, () => {
+    undoLoanRepayment(entry, y, m - 1);
+    if (!hadDue) { const dp = loadDuePaid(); delete dp[dueKey]; localStorage.setItem(DUE_PAID_KEY, JSON.stringify(dp)); }
+    renderAll();
+  });
+}
+// 返済の記録を取り消す（借金の残高と口座の残高を元に戻す）
+function undoLoanRepayment(entry, y, m0) {
+  const b = loadBalance();
+  const l = (b.loans || []).find(x => x.id === entry.loanId);
+  if (l) l.balance += entry.amount;
+  if (entry.balanceApplied && entry.accountId) { const a = (b.accounts || []).find(x => x.id === entry.accountId); if (a) a.balance += entry.amount; }
+  saveBalance(b);
+  if (y != null) setEntries('personal', y, m0, getEntries('personal', y, m0).filter(e => e.id !== entry.id));
+}
+
+// 今月の借金返済（ローンごとの返済済み額）
+function loanRepaidThisMonth(year, month) {
+  const sums = {}; let total = 0;
+  [...getEntries('personal', year, month), ...getEntries('business', year, month)].filter(isLoanRepay).forEach(e => {
+    sums[e.loanId] = (sums[e.loanId] || 0) + e.amount; total += e.amount;
+  });
+  return { sums, total };
+}
+
+function renderLoanRepaySummary() {
+  const el = document.getElementById('loan-repay-summary');
+  if (!el) return;
+  const { year, month } = state.personal;
+  const b = loadBalance();
+  const { sums, total } = loanRepaidThisMonth(year, month);
+  const loans = b.loans || [];
+  const card = el.closest('.card');
+  if (!loans.length && !total) { if (card) card.style.display = 'none'; return; }
+  if (card) card.style.display = '';
+  const debtTotal = loans.reduce((s, l) => s + l.balance, 0);
+  el.innerHTML = `
+    <div class="pl-summary">
+      <div><div class="pl-k">${month + 1}月に返済した額</div><div class="pl-n" style="color:#c4b5fd">${fmt(total)}</div><div class="pl-s">普通の支出とは分けて集計しています</div></div>
+      <div><div class="pl-k">借金の残高（合計）</div><div class="pl-n">${fmt(debtTotal)}</div><div class="pl-s">${loans.length}件</div></div>
+    </div>
+    ${loans.map(l => { const paid = sums[l.id] || 0, plan = Math.min(l.monthly || 0, l.balance + paid); const pct = plan ? Math.min(100, Math.round(paid / plan * 100)) : (paid ? 100 : 0);
+      return `<div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:12px"><span>📋 ${l.name}</span><span style="font-family:var(--mono)">${fmt(paid)} <span class="cc-s">／ 今月の予定 ${fmt(plan)}</span></span></div>
+        <div class="cc-bar" style="margin-top:3px"><span style="width:${pct}%;background:#7c3aed"></span></div>
+        <div class="cc-s" style="margin-top:2px">${pct >= 100 ? '✅ 今月分は返済済み' : '今月分はまだ'}・残高 ${fmt(l.balance)}</div>
+      </div>`; }).join('')}`;
+}
+
 function renderBalance() {
   const b = loadBalance();
   const today = new Date();
@@ -5075,26 +5221,32 @@ function renderBalance() {
     const endDate = new Date(today.getFullYear(), today.getMonth() + monthsLeft, 1);
     const endStr = `${endDate.getFullYear()}年${endDate.getMonth()+1}月完済見込`;
     return `
-    <div class="entry" id="loan-item-${l.id}">
-      <span class="entry-name">${l.name}</span>
-      <span style="font-size:11px;color:var(--text-hint);white-space:nowrap">${l.day}日返済 · ${endStr}</span>
+    <div class="entry" id="loan-item-${l.id}" style="flex-wrap:wrap">
+      <div style="flex:1;min-width:0">
+        <div class="entry-name" style="white-space:nowrap">${l.name}</div>
+        <div style="font-size:11px;color:var(--text-hint)">${l.day}日返済 · ${endStr}</div>
+      </div>
       <div style="text-align:right;white-space:nowrap">
         <div class="entry-amount exp">残 ${fmt(l.balance)}</div>
         <div style="font-size:11px;color:var(--text-muted);font-family:var(--mono)">月 -${fmt(l.monthly)}</div>
       </div>
+      <button class="del-btn" onclick="openLoanRepay(${l.id})" title="返済を記録" style="background:rgba(124,58,237,0.18);border-color:#7c3aed;color:#c4b5fd;width:auto;padding:2px 8px;font-size:12px">💸 返済</button>
       <button class="del-btn" onclick="editLoan(${l.id})" title="編集" style="background:var(--win);border-color:var(--gold);color:var(--gold)">✏</button>
       <button class="del-btn" onclick="deleteLoan(${l.id})">×</button>
+      <div id="loan-repay-${l.id}" style="flex-basis:100%"></div>
     </div>`;
   }).join('') : '';
 
   // 月末CF予測
   const monthIncome = pE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0)
                     + bE.filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0);
-  const monthExpense = pE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0)
-                     + bE.filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0);
+  const monthExpense = pE.filter(e=>e.type==='expense' && !isLoanRepay(e)).reduce((s,e)=>s+e.amount,0)
+                     + bE.filter(e=>e.type==='expense' && !isLoanRepay(e)).reduce((s,e)=>s+e.amount,0);
   const ccTotal = allExpEntries.filter(e => e.cardId).reduce((s,e) => s + e.amount, 0);
   const ccDebtTotal = (b.cards||[]).reduce((s,c) => s + (c.debt || 0), 0);
-  const loanTotal = b.loans.reduce((s,l) => s + l.monthly, 0);
+  // ローン返済は、今月すでに返済した分を除いた「残り」だけを引く（返済の記録は口座残高に反映済み）
+  const repaidNow = loanRepaidThisMonth(py, pm);
+  const loanTotal = b.loans.reduce((s,l) => s + Math.max(0, Math.min(l.monthly, l.balance + (repaidNow.sums[l.id] || 0)) - (repaidNow.sums[l.id] || 0)), 0);
   const thisMonthKey = getTodayKey().slice(0,7);
   const unpaidThisMonth = getUnpaidItems().filter(u => u.month === thisMonthKey).reduce((s,u) => s + u.amount, 0);
   const endBalance = totalAcc + monthIncome - monthExpense - loanTotal;
@@ -5115,7 +5267,8 @@ function renderBalance() {
       <div style="display:flex;justify-content:space-between"><span>今月収入</span><span style="font-family:var(--mono);color:var(--green)">+${fmt(monthIncome)}</span></div>
       <div style="display:flex;justify-content:space-between"><span>今月支出</span><span style="font-family:var(--mono);color:var(--red)">-${fmt(monthExpense)}</span></div>
       ${ccTotal > 0 ? `<div style="display:flex;justify-content:space-between;padding-left:10px;font-size:11px;color:var(--text-hint)"><span>└ うちクレカ利用分（上記に含む・引落は翌月以降）</span><span style="font-family:var(--mono)">${fmt(ccTotal)}</span></div>` : ''}
-      <div style="display:flex;justify-content:space-between"><span>ローン・借金返済</span><span style="font-family:var(--mono);color:var(--red)">-${fmt(loanTotal)}</span></div>
+      <div style="display:flex;justify-content:space-between"><span>ローン・借金返済（今月の残り）</span><span style="font-family:var(--mono);color:var(--red)">-${fmt(loanTotal)}</span></div>
+      ${repaidNow.total > 0 ? `<div style="display:flex;justify-content:space-between;padding-left:10px;font-size:11px;color:var(--text-hint)"><span>└ 今月すでに返済した分（口座残高に反映済み）</span><span style="font-family:var(--mono)">${fmt(repaidNow.total)}</span></div>` : ''}
       ${unpaidThisMonth > 0 ? `<div style="display:flex;justify-content:space-between"><span>⚠ 今月分の未払い（未払い一覧より）</span><span style="font-family:var(--mono);color:var(--gold)">-${fmt(unpaidThisMonth)}</span></div>` : ''}
     </div>
     ${endBalance < 0 ? `<div style="margin-top:12px;padding:10px 12px;background:rgba(244,63,94,0.12);border:1px solid var(--red);font-size:12px;color:var(--red)">💀 月末に残高が足りなくなる見込みです。収支を見直しましょう</div>` : ''}
@@ -5441,13 +5594,16 @@ function renderAll() {
   renderBarChart('personal-chart',
     pMonths.map(({month:m})=>MONTHS[m]),
     pMonths.map(({year:y,month:m})=>getEntries('personal',y,m).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0)),
-    pMonths.map(({year:y,month:m})=>getEntries('personal',y,m).filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0))
+    pMonths.map(({year:y,month:m})=>getEntries('personal',y,m).filter(e=>e.type==='expense' && !isLoanRepay(e)).reduce((s,e)=>s+e.amount,0)),
+    '収入','支出',
+    pMonths.map(({year:y,month:m})=>getEntries('personal',y,m).filter(isLoanRepay).reduce((s,e)=>s+e.amount,0))
   );
   renderBarChart('business-chart',
     bMonths.map(({month:m})=>MONTHS[m]),
     bMonths.map(({year:y,month:m})=>getEntries('business',y,m).filter(e=>e.type==='income').reduce((s,e)=>s+e.amount,0)),
-    bMonths.map(({year:y,month:m})=>getEntries('business',y,m).filter(e=>e.type==='expense').reduce((s,e)=>s+e.amount,0)),
-    '売上','経費'
+    bMonths.map(({year:y,month:m})=>getEntries('business',y,m).filter(e=>e.type==='expense' && !isLoanRepay(e)).reduce((s,e)=>s+e.amount,0)),
+    '売上','経費',
+    bMonths.map(({year:y,month:m})=>getEntries('business',y,m).filter(isLoanRepay).reduce((s,e)=>s+e.amount,0))
   );
   renderOverview();
   renderAnnual();
@@ -5459,6 +5615,7 @@ function renderAll() {
   if (typeof renderFactorySummary === 'function') renderFactorySummary();
   renderTodaySpendable();
   renderDailyPL();
+  renderLoanRepaySummary();
   if (typeof animateMetricValues === 'function') animateMetricValues();
 }
 
@@ -5735,7 +5892,9 @@ function getDailyPL(year, month) {
   const perDay = income / days;
   const ym = `${year}-${String(month + 1).padStart(2, '0')}`;
   const exp = {}; let undated = 0;
+  let loanRepaid = 0;
   all.filter(e => e.type === 'expense').forEach(e => {
+    if (isLoanRepay(e)) { loanRepaid += e.amount; return; } // 借金の返済は別枠
     if (e.date && e.date.slice(0, 7) === ym) { const d = parseInt(e.date.slice(8, 10)); exp[d] = (exp[d] || 0) + e.amount; }
     else undated += e.amount;
   });
@@ -5746,7 +5905,7 @@ function getDailyPL(year, month) {
     const spent = exp[d] || 0;
     list.push({ d, key, dow: new Date(year, month, d).getDay(), spent, net: Math.round(perDay - spent), future: key > todayKey });
   }
-  return { days, income, perDay, list, undated };
+  return { days, income, perDay, list, undated, loanRepaid };
 }
 
 function renderDailyPL() {
@@ -5799,6 +5958,7 @@ function renderDailyPL() {
       <div class="pl-weeks-title">週ごとの合計</div>
       ${weekRows}
       ${pl.undated ? `<div class="pl-s" style="margin-top:8px">※ 日付のない支出 ${fmt(pl.undated)} は日ごとの計算に含めていません</div>` : ''}
+      ${pl.loanRepaid ? `<div class="pl-s" style="margin-top:4px">※ 借金の返済 ${fmt(pl.loanRepaid)} は別枠（下の「借金の返済」）で、この計算には含めていません</div>` : ''}
     `;
   });
 }
