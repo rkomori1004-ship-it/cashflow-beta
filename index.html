@@ -744,6 +744,17 @@ input[type=checkbox] { accent-color: #34d399; }
 .cc-k { font-size: 11px; color: var(--text-muted); }
 .cc-v { font-family: var(--display); font-size: 19px; font-weight: 700; line-height: 1.3; }
 .cc-s { font-size: 10px; color: var(--text-hint); }
+.cc-sched { display: flex; flex-direction: column; gap: 4px; }
+.cc-row { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 10px; background: rgba(255,255,255,0.03); }
+.cc-row.now { background: rgba(34,211,238,0.08); box-shadow: inset 0 0 0 1px rgba(34,211,238,0.25); }
+.cc-row.paid { opacity: 0.55; }
+.cc-row.paid .cc-amt { text-decoration: line-through; }
+.cc-when { font-size: 10px; color: var(--text-muted); display: flex; flex-direction: column; line-height: 1.3; white-space: nowrap; }
+.cc-when b { font-size: 12px; color: var(--text); font-weight: 600; }
+.cc-when i { font-style: normal; font-size: 9px; color: var(--gold); }
+.cc-src { font-size: 10px; color: var(--text-hint); min-width: 0; }
+.cc-amt { font-family: var(--display); font-weight: 700; font-size: 15px; white-space: nowrap; }
+.cc-row.now .cc-amt { font-size: 18px; }
 .cc-bar { height: 6px; border-radius: 99px; background: rgba(255,255,255,0.08); overflow: hidden; }
 .cc-bar span { display: block; height: 100%; border-radius: 99px; transform-origin: left; animation: plGrow 0.8s cubic-bezier(.2,1,.3,1) both; }
 #personal-weekly td:not(:first-child), #business-weekly td:not(:first-child) { white-space: nowrap; font-size: 11px; }
@@ -2314,13 +2325,13 @@ function checkCardNotifications() {
 
   const b = loadBalance();
   const now = new Date();
-  const upcoming = (b.cards || []).filter(c => {
-    const diff = c.day - now.getDate();
+  const upcoming = (b.cards || []).map(c => ({ c, pay: ccNextPayDate(c) })).filter(({ pay }) => {
+    const diff = Math.round((new Date(pay + 'T00:00:00') - new Date(todayKey + 'T00:00:00')) / 86400000);
     return diff >= 0 && diff <= 3;
   });
 
   if (upcoming.length > 0) {
-    const body = upcoming.map(c => `${c.name}（${c.day}日）`).join('、') + ' の引き落としが近づいています。';
+    const body = upcoming.map(({ c, pay }) => `${c.name}（${ccMd(pay)}）`).join('、') + ' の引き落としが近づいています。';
     if (navigator.serviceWorker) {
       navigator.serviceWorker.ready.then(reg => {
         reg.showNotification('💳 引き落とし日が近づいています', { body, icon: 'icon-192.png' });
@@ -4624,9 +4635,54 @@ function addCreditCard() {
   updateAccountSelects();
 }
 
-// ---- クレジットカード: 今月の引落額と利用可能残高 ----
-// 締め日（closingDay: 1〜31、31=月末）と支払い月（payLag: 1=翌月, 2=翌々月）から、
-// 引落ごとの対象期間を求めてカード払いの記録を集計する。未設定のカードは「月末締め・翌月払い」として扱う。
+// ---- 日本の祝日と銀行休業日 ----
+// 固定祝日・ハッピーマンデー・春分/秋分・振替休日・国民の休日に、銀行の休業日（12/31〜1/3）を加える
+const _jpHolidayCache = {};
+function jpHolidays(y) {
+  if (_jpHolidayCache[y]) return _jpHolidayCache[y];
+  const set = new Set();
+  const key = (m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const nthMonday = (m, n) => { const first = new Date(y, m - 1, 1).getDay(); return 1 + ((8 - first) % 7) + (n - 1) * 7; };
+  [[1, 1], [2, 11], [2, 23], [4, 29], [5, 3], [5, 4], [5, 5], [8, 11], [11, 3], [11, 23]].forEach(([m, d]) => set.add(key(m, d)));
+  set.add(key(1, nthMonday(1, 2)));   // 成人の日
+  set.add(key(7, nthMonday(7, 3)));   // 海の日
+  set.add(key(9, nthMonday(9, 3)));   // 敬老の日
+  set.add(key(10, nthMonday(10, 2))); // スポーツの日
+  set.add(key(3, Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)))); // 春分の日
+  set.add(key(9, Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)))); // 秋分の日
+  // 国民の休日（祝日にはさまれた平日）
+  [...set].forEach(k => {
+    const d = new Date(k); d.setDate(d.getDate() + 2);
+    const k2 = ymdOf(d); const mid = new Date(k); mid.setDate(mid.getDate() + 1);
+    if (set.has(k2) && mid.getDay() !== 0 && !set.has(ymdOf(mid))) set.add(ymdOf(mid));
+  });
+  // 振替休日（日曜の祝日の後の最初の平日）
+  [...set].sort().forEach(k => {
+    const d = new Date(k);
+    if (d.getDay() !== 0) return;
+    do { d.setDate(d.getDate() + 1); } while (set.has(ymdOf(d)));
+    set.add(ymdOf(d));
+  });
+  set.add(key(12, 31)); set.add(key(1, 2)); set.add(key(1, 3)); // 銀行の休業日
+  return (_jpHolidayCache[y] = set);
+}
+function ymdOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function isBusinessDay(ymd) {
+  const d = new Date(ymd + 'T00:00:00');
+  return d.getDay() !== 0 && d.getDay() !== 6 && !jpHolidays(d.getFullYear()).has(ymd);
+}
+// 土日祝・銀行休業日なら翌営業日にずらす
+function nextBusinessDay(ymd) {
+  const d = new Date(ymd + 'T00:00:00');
+  while (!isBusinessDay(ymdOf(d))) d.setDate(d.getDate() + 1);
+  return ymdOf(d);
+}
+const DOW_JA = ['日', '月', '火', '水', '木', '金', '土'];
+const ccMdw = ymd => `${parseInt(ymd.slice(5, 7))}/${parseInt(ymd.slice(8, 10))}（${DOW_JA[new Date(ymd + 'T00:00:00').getDay()]}）`;
+
+// ---- クレジットカード: 引き落とし予定・確定額・利用可能残高 ----
+// 締め日（closingDay: 1〜31、31=月末）と支払い月（payLag: 1=翌月, 2=翌々月）から引落ごとの利用期間を求める。
+// 未設定のカードは「月末締め・翌月払い」。引落日は土日祝なら翌営業日。
 function ccYmd(y, m0, d) {
   const dt = new Date(y, m0, 1);
   const last = new Date(dt.getFullYear(), dt.getMonth() + 1, 0).getDate();
@@ -4637,11 +4693,11 @@ function ccCycle(card, y, m0) {
   const lag = card.payLag === 2 ? 2 : 1;
   const close = card.closingDay > 0 ? card.closingDay : 31;
   const end = ccYmd(y, m0 - lag, close);
-  const prevEnd = ccYmd(y, m0 - lag - 1, close);
-  const [py, pm, pd] = prevEnd.split('-').map(Number);
-  const start = new Date(py, pm - 1, pd + 1);
-  const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
-  return { start: startStr, end, payDate: ccYmd(y, m0, card.day || 27) };
+  const [py, pm, pd] = ccYmd(y, m0 - lag - 1, close).split('-').map(Number);
+  const start = ymdOf(new Date(py, pm - 1, pd + 1));
+  const nominal = ccYmd(y, m0, card.day || 27);
+  const payDate = nextBusinessDay(nominal);
+  return { start, end, nominal, payDate, month: nominal.slice(0, 7) };
 }
 function ccUsageEntries(cardId) {
   const out = [];
@@ -4650,28 +4706,98 @@ function ccUsageEntries(cardId) {
   })));
   return out;
 }
+// その月の引き落とし額
+//  1) カード会社の確定額を入力済み → 確定額 ＋ 入力日より後の日付のカード払い（その期間の分）
+//  2) 未払い一覧にこのカード・この月を手入力 → その金額
+//  3) どちらもない → その期間のカード払いの合計（見込み）
+function ccMonthAmount(card, cyc, usage, unpaidItems, today) {
+  const inCycle = usage.filter(e => e.date >= cyc.start && e.date <= cyc.end);
+  const stmt = card.statements && card.statements[cyc.month];
+  const manual = (unpaidItems || []).filter(u => u.kind === 'manual' && u.cardId === card.id && u.month === cyc.month);
+  let source, amount, base = 0, added = 0;
+  if (stmt && stmt.amount >= 0) {
+    base = stmt.amount;
+    added = inCycle.filter(e => e.date > stmt.asOf).reduce((s, e) => s + e.amount, 0);
+    amount = base + added; source = 'statement';
+  } else if (manual.length) {
+    amount = manual.reduce((s, u) => s + u.amount, 0); source = 'unpaid';
+  } else {
+    amount = inCycle.reduce((s, e) => s + e.amount, 0); source = 'estimate';
+  }
+  const paid = today > cyc.payDate && source !== 'unpaid';
+  return { ...cyc, amount, base, added, source, paid };
+}
 function ccStatus(card, unpaidItems) {
   const today = getTodayKey();
   const now = new Date();
   const y = now.getFullYear(), m0 = now.getMonth();
-  const thisMonth = today.slice(0, 7);
   const usage = ccUsageEntries(card.id);
-  const sumRange = (from, to) => usage.filter(e => e.date >= from && e.date <= to).reduce((s, e) => s + e.amount, 0);
-  const cyc = ccCycle(card, y, m0);
-  const estimate = sumRange(cyc.start, cyc.end);
-  // 未払い一覧に今月分（このカード）を手入力していれば、そちらを「確定額」として優先する
-  const manual = (unpaidItems || []).filter(u => u.kind === 'manual' && u.cardId === card.id && u.month === thisMonth);
-  const confirmed = manual.length ? manual.reduce((s, u) => s + u.amount, 0) : null;
-  const paid = today > cyc.payDate && !manual.length;
-  // 利用中の金額：まだ引き落とされていない利用分（最後に引き落とされた期間の締め日より後）＋分割残債
-  const prev = ccCycle(card, y, m0 - 1);
-  const cutoff = today > cyc.payDate ? cyc.end : prev.end;
-  const outstanding = usage.filter(e => e.date > cutoff).reduce((s, e) => s + e.amount, 0) + (card.debt || 0);
+  // 当月・翌月・翌々月の引き落とし
+  const months = [0, 1, 2].map(k => ccMonthAmount(card, ccCycle(card, y, m0 + k), usage, unpaidItems, today));
+  // 利用中の金額 ＝ まだ引き落とされていない3か月分 ＋ それより後の利用 ＋ 分割・リボ残債
+  const lastEnd = months[2].end;
+  const outstanding = months.filter(x => !x.paid).reduce((s, x) => s + x.amount, 0)
+    + usage.filter(e => e.date > lastEnd).reduce((s, e) => s + e.amount, 0) + (card.debt || 0);
   const limit = card.limit > 0 ? card.limit : 0;
-  return { cycle: cyc, estimate, confirmed, amount: confirmed != null ? confirmed : estimate, paid, outstanding,
-    limit, available: limit ? limit - outstanding : null, usedPct: limit ? Math.min(100, Math.round(outstanding / limit * 100)) : 0 };
+  const cur = months[0];
+  return { months, cycle: cur, amount: cur.amount, paid: cur.paid, source: cur.source,
+    confirmed: cur.source === 'estimate' ? null : cur.amount, estimate: cur.source === 'estimate' ? cur.amount : null,
+    outstanding, limit, available: limit ? limit - outstanding : null, usedPct: limit ? Math.min(100, Math.round(outstanding / limit * 100)) : 0 };
+}
+// 次の引き落とし日（今日以降で最も近い営業日ベースの日）
+function ccNextPayDate(card) {
+  const now = new Date(), today = getTodayKey();
+  for (let k = 0; k < 3; k++) { const c = ccCycle(card, now.getFullYear(), now.getMonth() + k); if (c.payDate >= today) return c.payDate; }
+  return ccCycle(card, now.getFullYear(), now.getMonth() + 1).payDate;
 }
 const ccMd = ymd => `${parseInt(ymd.slice(5, 7))}/${parseInt(ymd.slice(8, 10))}`;
+
+// カード会社で確定している当月・翌月・翌々月の支払い額を入力
+function editCardStatements(id) {
+  const b = loadBalance();
+  const c = (b.cards || []).find(x => x.id === id);
+  const el = document.getElementById(`cc-stmt-${id}`);
+  if (!c || !el) return;
+  if (el.innerHTML) { el.innerHTML = ''; return; }
+  const now = new Date();
+  const labels = ['今月', '翌月', '翌々月'];
+  el.innerHTML = `
+    <div class="add-panel open" style="margin:0">
+      <div style="font-size:11px;color:var(--text-hint);margin-bottom:8px">カード会社のアプリや明細で決まっている金額を入れてください。入れた日より後の日付で記録したカード払いは、締め日に合わせて自動で上乗せします。空欄にすると見込み計算に戻ります。</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        ${[0, 1, 2].map(k => { const cyc = ccCycle(c, now.getFullYear(), now.getMonth() + k); const s = (c.statements || {})[cyc.month];
+          return `<div class="field"><label>${labels[k]} ${ccMd(cyc.payDate)}</label><input type="number" id="ccstmt-${id}-${k}" data-month="${cyc.month}" value="${s ? s.amount : ''}" placeholder="未確定"></div>`; }).join('')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px">
+        <button class="add-btn green" onclick="saveCardStatements(${id})" style="height:32px;width:auto;padding:0 14px;font-size:13px;margin-top:0">保存</button>
+        <button class="del-btn" onclick="editCardStatements(${id})" title="閉じる">×</button>
+      </div>
+    </div>`;
+}
+function saveCardStatements(id) {
+  const b = loadBalance();
+  const c = (b.cards || []).find(x => x.id === id);
+  if (!c) return;
+  if (!c.statements) c.statements = {};
+  const today = getTodayKey();
+  [0, 1, 2].forEach(k => {
+    const inp = document.getElementById(`ccstmt-${id}-${k}`);
+    if (!inp) return;
+    const month = inp.dataset.month, v = inp.value.trim();
+    if (v === '') { delete c.statements[month]; return; }
+    const amount = parseFloat(v);
+    if (isNaN(amount) || amount < 0) return;
+    const prev = c.statements[month];
+    // 金額が変わったときだけ「入力日」を更新する（上乗せの起点）
+    if (!prev || prev.amount !== amount) c.statements[month] = { amount, asOf: today };
+  });
+  // 過ぎた月の確定額は3か月より前のものを片付ける
+  const oldest = ymdOf(new Date(new Date().getFullYear(), new Date().getMonth() - 3, 1)).slice(0, 7);
+  Object.keys(c.statements).forEach(m => { if (m < oldest) delete c.statements[m]; });
+  saveBalance(b);
+  renderBalance();
+}
+
 
 function editCreditCard(id) {
   const b = loadBalance();
@@ -4895,11 +5021,8 @@ function renderBalance() {
   let ccTotalThisMonth = 0;
   const ccEl = document.getElementById('creditcard-list');
   ccEl.innerHTML = (b.cards||[]).length ? b.cards.map(c => {
-    const daysUntil = (() => {
-      const target = new Date(today.getFullYear(), today.getMonth(), c.day);
-      if (target < today) target.setMonth(target.getMonth() + 1);
-      return Math.ceil((target - today) / 86400000);
-    })();
+    const nextPay = ccNextPayDate(c);
+    const daysUntil = Math.round((new Date(nextPay + 'T00:00:00') - new Date(getTodayKey() + 'T00:00:00')) / 86400000);
     const urgent = daysUntil <= 7;
     const cardUsage = allExpEntries.filter(e => e.cardId === c.id).reduce((s,e) => s + e.amount, 0);
     const unpaidAll = getUnpaidItems();
@@ -4907,6 +5030,10 @@ function renderBalance() {
     const st = ccStatus(c, unpaidAll);
     ccTotalThisMonth += st.paid ? 0 : st.amount;
     const barColor = st.usedPct >= 90 ? 'var(--red)' : st.usedPct >= 70 ? 'var(--gold)' : '#22d3ee';
+    const mLabels = ['今月', '翌月', '翌々月'];
+    const srcLabel = x => x.paid ? '✅ 引落済み'
+      : x.source === 'statement' ? (x.added ? `確定 ${fmt(x.base)} ＋ 追加 ${fmt(x.added)}` : '確定')
+      : x.source === 'unpaid' ? '確定（未払い一覧）' : `見込み（${ccMd(x.start)}〜${ccMd(x.end)}利用分）`;
     return `
     <div class="entry cc-entry" id="cc-item-${c.id}" style="flex-direction:column;align-items:stretch;gap:8px;${urgent && !st.paid ? 'border-color:rgba(252,211,77,0.45)' : ''}">
       <div style="display:flex;align-items:center;gap:8px">
@@ -4915,19 +5042,22 @@ function renderBalance() {
         <button class="del-btn" onclick="editCreditCard(${c.id})" title="カード情報を編集" style="background:var(--win);border-color:var(--gold);color:var(--gold)">✏</button>
         <button class="del-btn" onclick="deleteCreditCard(${c.id})">×</button>
       </div>
-      <div class="cc-grid">
-        <div>
-          <div class="cc-k">今月の引き落とし（${ccMd(st.cycle.payDate)}）</div>
-          <div class="cc-v" style="${st.paid ? 'color:var(--text-muted);text-decoration:line-through' : ''}">${fmt(st.amount)}</div>
-          <div class="cc-s">${st.paid ? '✅ 引落済み' : st.confirmed != null ? '確定（未払い一覧より）' : `見込み・${ccMd(st.cycle.start)}〜${ccMd(st.cycle.end)}の利用分`}</div>
-        </div>
-        <div>
-          <div class="cc-k">利用可能残高</div>
-          ${st.limit ? `<div class="cc-v" style="color:${st.available < 0 ? 'var(--red)' : 'var(--text)'}">${fmt(st.available)}</div>
-          <div class="cc-s">限度額 ${fmt(st.limit)} ／ 利用中 ${fmt(st.outstanding)}${st.usedPct >= 90 ? ' ⚠ 残りわずか' : ''}</div>` : `<div class="cc-s" style="margin-top:4px">✏ で利用限度額を登録すると表示されます</div>`}
-        </div>
+      <div class="cc-sched">
+        ${st.months.map((x, k) => `
+        <div class="cc-row${k === 0 ? ' now' : ''}${x.paid ? ' paid' : ''}">
+          <span class="cc-when">${mLabels[k]}<b>${ccMdw(x.payDate)}</b>${x.payDate !== x.nominal ? `<i title="${ccMd(x.nominal)}が休日のため">${ccMd(x.nominal)}→翌営業日</i>` : ''}</span>
+          <span class="cc-src">${srcLabel(x)}</span>
+          <span class="cc-amt">${fmt(x.amount)}</span>
+        </div>`).join('')}
       </div>
-      ${st.limit ? `<div class="cc-bar"><span style="width:${st.usedPct}%;background:${barColor}"></span></div>` : ''}
+      <button class="add-toggle" onclick="editCardStatements(${c.id})" style="align-self:flex-start;font-size:11px;padding:3px 10px">📝 カード会社の確定額を入力</button>
+      <div id="cc-stmt-${c.id}"></div>
+      <div>
+        <div class="cc-k">利用可能残高</div>
+        ${st.limit ? `<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><span class="cc-v" style="color:${st.available < 0 ? 'var(--red)' : 'var(--text)'}">${fmt(st.available)}</span>
+        <span class="cc-s">限度額 ${fmt(st.limit)} ／ 利用中 ${fmt(st.outstanding)}${st.usedPct >= 90 ? ' ⚠ 残りわずか' : ''}</span></div>
+        <div class="cc-bar" style="margin-top:4px"><span style="width:${st.usedPct}%;background:${barColor}"></span></div>` : `<div class="cc-s" style="margin-top:2px">✏ で利用限度額を登録すると表示されます</div>`}
+      </div>
       <div class="cc-s" style="display:flex;gap:12px;flex-wrap:wrap">
         <span>今月の利用 ${fmt(cardUsage)}</span>
         ${cardUnpaid > 0 ? `<span style="color:var(--gold)">未払い合計 ${fmt(cardUnpaid)}</span>` : ''}
@@ -5124,11 +5254,19 @@ function renderDueCard() {
   unpaid.filter(u => u.month <= thisMonth).forEach(u => {
     let date = null;
     if (u.kind === 'auto' && u.date) date = u.date;
-    else if (u.cardId) { const card = (b.cards || []).find(c => c.id === u.cardId); if (card) date = dayToDate(card.day); }
+    else if (u.cardId) { const card = (b.cards || []).find(c => c.id === u.cardId); if (card) date = nextBusinessDay(dayToDate(card.day)); }
     else if (u.loanId) { const loan = (b.loans || []).find(l => l.id === u.loanId); if (loan) date = dayToDate(loan.day); }
     const carry = u.month < thisMonth;
     items.push({ icon: u.cardId ? '💳' : u.loanId ? '📋' : '⚠', name: u.name, badge: u.linkName || u.cat, amount: u.amount, date,
       carryLabel: carry ? `${parseInt(u.month.slice(5, 7))}月分の持ち越し` : '' });
+  });
+
+  // カード会社の確定額を入力した今月の引き落とし（未払い一覧に同じカードの分があるときは二重にしない）
+  (b.cards || []).forEach(card => {
+    if (unpaid.some(u => u.cardId === card.id && u.month <= thisMonth)) return;
+    const cur = ccStatus(card, unpaid).months[0];
+    if (cur.source !== 'statement' || cur.paid || !(cur.amount > 0)) return;
+    items.push({ icon: '💳', name: `${card.name} 引き落とし`, badge: cur.added ? `確定＋追加 ${fmt(cur.added)}` : 'カード会社の確定額', amount: cur.amount, date: cur.payDate });
   });
 
   // ローンの毎月返済
