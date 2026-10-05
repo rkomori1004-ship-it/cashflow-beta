@@ -1202,6 +1202,7 @@ input[type=checkbox] { accent-color: #34d399; }
           <div class="field"><label>引き落とし日</label><input id="cc-day" type="number" min="1" max="31" placeholder="27"></div>
           <div class="field"><label>引き落とし月</label><select id="cc-lag"><option value="1">締めの翌月</option><option value="2">締めの翌々月</option></select></div>
           <div class="field"><label>分割・リボ残債（円）</label><input id="cc-debt" type="number" placeholder="0"></div>
+          <div class="field"><label>毎月の分割・リボ支払い額</label><input id="cc-inst" type="number" placeholder="0"></div>
           <button class="add-btn red" onclick="addCreditCard()" title="追加" style="width:100%">＋ 追加</button>
         </div>
       </div>
@@ -2143,6 +2144,21 @@ function markUnpaidDone(id) {
   }
   saveUnpaid(list.filter(u => u.id !== id));
 
+  // カード紐付けなら、そのカードのその月の引き落としを「済」にして分割・リボ残債を減らす
+  let cardBefore = null;
+  if (item.cardId) {
+    const b = loadBalance();
+    const card = (b.cards || []).find(c => c.id === item.cardId);
+    if (card && !(card.paidMonths || {})[item.month]) {
+      cardBefore = { debt: card.debt || 0, paidMonths: JSON.parse(JSON.stringify(card.paidMonths || {})) };
+      const inst = Math.min(card.installment > 0 ? card.installment : 0, card.debt || 0);
+      card.debt = (card.debt || 0) - inst;
+      card.paidMonths = card.paidMonths || {};
+      card.paidMonths[item.month] = { amount: item.amount, inst, accountId: null, accountName: item.accountName || '', at: getTodayKey(), viaUnpaid: true };
+      saveBalance(b);
+    }
+  }
+
   // ローン紐付けなら借金の残高も減らす
   let loanApplied = false;
   if (item.loanId) {
@@ -2183,6 +2199,11 @@ function markUnpaidDone(id) {
       const b = loadBalance();
       const acc = b.accounts.find(a => a.id === item.accountId);
       if (acc) { acc.balance += item.amount; saveBalance(b); }
+    }
+    if (cardBefore) {
+      const b3 = loadBalance();
+      const card = (b3.cards || []).find(c => c.id === item.cardId);
+      if (card) { card.debt = cardBefore.debt; card.paidMonths = cardBefore.paidMonths; saveBalance(b3); }
     }
     if (loanApplied) {
       const b2 = loadBalance();
@@ -4927,9 +4948,10 @@ function addCreditCard() {
   b.cards.push({ id: Date.now(), name, debt, day,
     closingDay: close >= 1 && close <= 31 ? close : 31,
     payLag: document.getElementById('cc-lag').value === '2' ? 2 : 1,
-    limit: limit > 0 ? limit : null });
+    limit: limit > 0 ? limit : null,
+    installment: parseFloat(document.getElementById('cc-inst').value) > 0 ? parseFloat(document.getElementById('cc-inst').value) : null });
   saveBalance(b);
-  ['cc-name','cc-debt','cc-day','cc-close','cc-limit'].forEach(id => document.getElementById(id).value = '');
+  ['cc-name','cc-debt','cc-day','cc-close','cc-limit','cc-inst'].forEach(id => document.getElementById(id).value = '');
   renderBalance();
   updateAccountSelects();
 }
@@ -5023,25 +5045,102 @@ function ccMonthAmount(card, cyc, usage, unpaidItems, today) {
   } else {
     amount = inCycle.reduce((s, e) => s + e.amount, 0); source = 'estimate';
   }
-  const paid = today > cyc.payDate && source !== 'unpaid';
-  return { ...cyc, amount, base, added, source, paid };
+  return { ...cyc, amount, base, added, source, paid: false };
 }
+// 分割・リボ残債（debt）＝これから払う分割・リボの合計。毎月の支払い額（installment）ずつ減っていく。
+// 各月の引き落とし額 ＝ 一括払いの分 ＋ 分割・リボの分。確定額にはすでに分割・リボの分が入っている。
+// 利用中 ＝ まだ引き落とされていない月の「一括払いの分」＋ それより後の利用 ＋ 分割・リボ残債（二重に数えない）
 function ccStatus(card, unpaidItems) {
   const today = getTodayKey();
   const now = new Date();
   const y = now.getFullYear(), m0 = now.getMonth();
   const usage = ccUsageEntries(card.id);
-  // 当月・翌月・翌々月の引き落とし
-  const months = [0, 1, 2].map(k => ccMonthAmount(card, ccCycle(card, y, m0 + k), usage, unpaidItems, today));
-  // 利用中の金額 ＝ まだ引き落とされていない3か月分 ＋ それより後の利用 ＋ 分割・リボ残債
+  const inst = card.installment > 0 ? card.installment : 0;
+  const paidMap = card.paidMonths || {};
+  let debtLeft = card.debt || 0;
+  const months = [0, 1, 2].map(k => {
+    const x = ccMonthAmount(card, ccCycle(card, y, m0 + k), usage, unpaidItems, today);
+    const pm = paidMap[x.month];
+    if (pm) {
+      x.paid = true; x.paidInfo = pm; x.amount = pm.amount; x.inst = pm.inst || 0; x.lump = 0;
+    } else {
+      x.inst = Math.min(inst, debtLeft); debtLeft -= x.inst;
+      if (x.source === 'estimate') { x.lump = x.amount; x.amount += x.inst; }
+      else x.lump = Math.max(0, x.amount - x.inst);
+      x.overdue = today > x.payDate; // 引落日を過ぎたが、まだ「引落済み」にしていない
+    }
+    return x;
+  });
   const lastEnd = months[2].end;
-  const outstanding = months.filter(x => !x.paid).reduce((s, x) => s + x.amount, 0)
+  const outstanding = months.filter(x => !x.paid).reduce((s, x) => s + x.lump, 0)
     + usage.filter(e => e.date > lastEnd).reduce((s, e) => s + e.amount, 0) + (card.debt || 0);
   const limit = card.limit > 0 ? card.limit : 0;
   const cur = months[0];
   return { months, cycle: cur, amount: cur.amount, paid: cur.paid, source: cur.source,
     confirmed: cur.source === 'estimate' ? null : cur.amount, estimate: cur.source === 'estimate' ? cur.amount : null,
-    outstanding, limit, available: limit ? limit - outstanding : null, usedPct: limit ? Math.min(100, Math.round(outstanding / limit * 100)) : 0 };
+    outstanding, limit, available: limit ? limit - outstanding : null, usedPct: limit ? Math.max(0, Math.min(100, Math.round(outstanding / limit * 100))) : 0 };
+}
+
+// ---- カードの引き落としを「引落済み」にする ----
+// 引き落とし口座から金額を引き、分割・リボ残債をその月の分割・リボの分だけ減らす
+function openCardPay(cardId, k) {
+  const b = loadBalance();
+  const c = (b.cards || []).find(x => x.id === cardId);
+  const el = document.getElementById(`cc-pay-${cardId}`);
+  if (!c || !el) return;
+  const x = ccStatus(c, getUnpaidItems()).months[k];
+  if (el.dataset.k === String(k) && el.innerHTML) { el.innerHTML = ''; el.dataset.k = ''; return; }
+  el.dataset.k = String(k);
+  el.innerHTML = `
+    <div class="add-panel open" style="margin:0">
+      <div style="font-size:12px;margin-bottom:8px">${ccMdw(x.payDate)} の引き落としを「済」にします</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="field"><label>引き落とされた額（円）</label><input type="number" id="ccpay-amount-${cardId}" value="${x.amount}"></div>
+        <div class="field"><label>引き落とし口座</label><select id="ccpay-acc-${cardId}">${(b.accounts || []).map(a => `<option value="${a.id}"${a.id === c.accountId ? ' selected' : ''}>🏦 ${a.name}（${fmt(a.balance)}）</option>`).join('')}<option value=""${c.accountId ? '' : (b.accounts || []).length ? '' : ' selected'}>口座からは引かない</option></select></div>
+      </div>
+      <div class="cc-s" style="margin-top:6px">${x.inst ? `うち分割・リボ ${fmt(x.inst)} → 残債 ${fmt(c.debt || 0)} → ${fmt(Math.max(0, (c.debt || 0) - x.inst))}` : '分割・リボの支払いはありません'}</div>
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px">
+        <button class="add-btn green" onclick="markCardMonthPaid(${cardId}, ${k})" style="height:32px;width:auto;padding:0 14px;font-size:13px;margin-top:0">引落済みにする</button>
+        <button class="del-btn" onclick="openCardPay(${cardId}, ${k})" title="閉じる">×</button>
+      </div>
+    </div>`;
+}
+function markCardMonthPaid(cardId, k) {
+  const b = loadBalance();
+  const c = (b.cards || []).find(x => x.id === cardId);
+  if (!c) return;
+  const x = ccStatus(c, getUnpaidItems()).months[k];
+  const amount = parseFloat(document.getElementById(`ccpay-amount-${cardId}`).value);
+  const accId = parseInt(document.getElementById(`ccpay-acc-${cardId}`).value);
+  if (!(amount >= 0)) return;
+  const acc = (b.accounts || []).find(a => a.id === accId);
+  if (acc) acc.balance -= amount;
+  const debtBefore = c.debt || 0;
+  c.debt = Math.max(0, debtBefore - x.inst);
+  if (!c.paidMonths) c.paidMonths = {};
+  c.paidMonths[x.month] = { amount, inst: debtBefore - c.debt, accountId: acc ? acc.id : null, accountName: acc ? acc.name : '', at: getTodayKey() };
+  if (acc && !c.accountId) c.accountId = acc.id; // 次回のために引き落とし口座を覚える
+  saveBalance(b);
+  renderAll();
+  showUndoToast(`${c.name} の ${ccMd(x.payDate)} 引き落とし ${fmt(amount)} を済にしました`, () => unmarkCardMonthPaid(cardId, x.month, true));
+}
+function unmarkCardMonthPaid(cardId, month, silent) {
+  const b = loadBalance();
+  const c = (b.cards || []).find(x => x.id === cardId);
+  const pm = c && c.paidMonths && c.paidMonths[month];
+  if (!pm) return;
+  if (!silent && !confirm('この引き落としの「済」を取り消して、口座残高と分割・リボ残債を元に戻しますか？')) return;
+  if (pm.accountId != null) { const a = (b.accounts || []).find(x => x.id === pm.accountId); if (a) a.balance += pm.amount; }
+  c.debt = (c.debt || 0) + (pm.inst || 0);
+  delete c.paidMonths[month];
+  saveBalance(b);
+  renderAll();
+}
+// 過ぎた月の「済」の記録は、3か月より前のものを片付ける
+function ccCleanupPaidMonths(c) {
+  if (!c.paidMonths) return;
+  const oldest = ymdOf(new Date(new Date().getFullYear(), new Date().getMonth() - 3, 1)).slice(0, 7);
+  Object.keys(c.paidMonths).forEach(m => { if (m < oldest) delete c.paidMonths[m]; });
 }
 // 次の引き落とし日（今日以降で最も近い営業日ベースの日）
 function ccNextPayDate(card) {
@@ -5112,7 +5211,10 @@ function editCreditCard(id) {
         <div class="field"><label>引き落とし日</label><input type="number" min="1" max="31" id="ccedit-day-${id}" value="${c.day || ''}"></div>
         <div class="field"><label>引き落とし月</label><select id="ccedit-lag-${id}"><option value="1"${c.payLag === 2 ? '' : ' selected'}>締めの翌月</option><option value="2"${c.payLag === 2 ? ' selected' : ''}>締めの翌々月</option></select></div>
         <div class="field"><label>分割・リボ残債（円）</label><input type="number" id="ccedit-debt-${id}" value="${c.debt || 0}"></div>
+        <div class="field"><label>毎月の分割・リボ支払い額（円）</label><input type="number" id="ccedit-inst-${id}" value="${c.installment || ''}" placeholder="10000"></div>
+        <div class="field"><label>引き落とし口座</label><select id="ccedit-acc-${id}"><option value="">未設定</option>${(b.accounts || []).map(a => `<option value="${a.id}"${a.id === c.accountId ? ' selected' : ''}>🏦 ${a.name}</option>`).join('')}</select></div>
       </div>
+      <div class="cc-s">分割・リボ残債は、カード会社のアプリの「分割・リボの残高（これから払う分の合計）」を入れてください。引き落としを「済」にすると、毎月の支払い額ぶん自動で減ります。</div>
       <div style="display:flex;justify-content:flex-end;gap:6px">
         <button class="add-btn green" onclick="saveCreditCardEdit(${id})" style="height:32px;width:auto;padding:0 14px;font-size:13px;margin-top:0">保存</button>
         <button class="del-btn" onclick="renderBalance()" title="キャンセル">×</button>
@@ -5133,6 +5235,9 @@ function saveCreditCardEdit(id) {
   c.payLag = v('lag') === '2' ? 2 : 1;
   c.limit = parseFloat(v('limit')) > 0 ? parseFloat(v('limit')) : null;
   c.debt = parseFloat(v('debt')) || 0;
+  c.installment = parseFloat(v('inst')) > 0 ? parseFloat(v('inst')) : null;
+  c.accountId = parseInt(v('acc')) || null;
+  ccCleanupPaidMonths(c);
   saveBalance(b);
   renderBalance();
   updateAccountSelects();
@@ -5440,9 +5545,10 @@ function renderBalance() {
     ccTotalThisMonth += st.paid ? 0 : st.amount;
     const barColor = st.usedPct >= 90 ? 'var(--red)' : st.usedPct >= 70 ? 'var(--gold)' : '#22d3ee';
     const mLabels = ['今月', '翌月', '翌々月'];
-    const srcLabel = x => x.paid ? '✅ 引落済み'
-      : x.source === 'statement' ? (x.added ? `確定 ${fmt(x.base)} ＋ 追加 ${fmt(x.added)}` : '確定')
-      : x.source === 'unpaid' ? '確定（未払い一覧）' : `見込み（${ccMd(x.start)}〜${ccMd(x.end)}利用分）`;
+    const srcLabel = x => x.paid ? `✅ 引落済み${x.paidInfo && x.paidInfo.accountName ? `（${x.paidInfo.accountName}）` : ''}`
+      : (x.source === 'statement' ? (x.added ? `確定 ${fmt(x.base)} ＋ 追加 ${fmt(x.added)}` : '確定')
+        : x.source === 'unpaid' ? '確定（未払い一覧）' : `見込み（一括 ${fmt(x.lump)}${x.inst ? ` ＋ 分割・リボ ${fmt(x.inst)}` : ''}）`)
+        + (x.overdue ? '<br><b style="color:var(--gold)">⚠ 引落日を過ぎました。済にしてください</b>' : '');
     return `
     <div class="entry cc-entry" id="cc-item-${c.id}" style="flex-direction:column;align-items:stretch;gap:8px;${urgent && !st.paid ? 'border-color:rgba(252,211,77,0.45)' : ''}">
       <div style="display:flex;align-items:center;gap:8px">
@@ -5456,9 +5562,14 @@ function renderBalance() {
         <div class="cc-row${k === 0 ? ' now' : ''}${x.paid ? ' paid' : ''}">
           <span class="cc-when">${mLabels[k]}<b>${ccMdw(x.payDate)}</b>${x.payDate !== x.nominal ? `<i title="${ccMd(x.nominal)}が休日のため">${ccMd(x.nominal)}→翌営業日</i>` : ''}</span>
           <span class="cc-src">${srcLabel(x)}</span>
-          <span class="cc-amt">${fmt(x.amount)}</span>
+          <span style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+            <span class="cc-amt">${fmt(x.amount)}</span>
+            ${x.paid ? `<button class="del-btn" onclick="unmarkCardMonthPaid(${c.id}, '${x.month}')" style="font-size:10px;padding:0 4px">取り消す</button>`
+              : `<button class="add-toggle" onclick="openCardPay(${c.id}, ${k})" style="font-size:10px;padding:2px 8px${x.overdue ? ';color:var(--gold);border-color:var(--gold)' : ''}">✓ 引落済み</button>`}
+          </span>
         </div>`).join('')}
       </div>
+      <div id="cc-pay-${c.id}"></div>
       <button class="add-toggle" onclick="editCardStatements(${c.id})" style="align-self:flex-start;font-size:11px;padding:3px 10px">📝 カード会社の確定額を入力</button>
       <div id="cc-stmt-${c.id}"></div>
       <div>
@@ -5470,7 +5581,7 @@ function renderBalance() {
       <div class="cc-s" style="display:flex;gap:12px;flex-wrap:wrap">
         <span>今月の利用 ${fmt(cardUsage)}</span>
         ${cardUnpaid > 0 ? `<span style="color:var(--gold)">未払い合計 ${fmt(cardUnpaid)}</span>` : ''}
-        ${c.debt ? `<span>分割・リボ残債 ${fmt(c.debt)}</span>` : ''}
+        ${c.debt ? `<span>分割・リボ残債 ${fmt(c.debt)}${c.installment ? `（毎月 ${fmt(c.installment)}）` : ''}</span>` : ''}
       </div>
     </div>`;
   }).join('') : '';
@@ -7345,7 +7456,13 @@ async function registerCsvEntries() {
       // カード残高をリセット（引落済み）
       if (r._cardPayId) {
         const card = (b.cards||[]).find(c => c.id === r._cardPayId);
-        if (card) card.balance = Math.max(0, card.balance - r.amount);
+        const ym = entryDate ? entryDate.slice(0, 7) : '';
+        if (card && ym && !(card.paidMonths || {})[ym]) {
+          const inst = Math.min(card.installment > 0 ? card.installment : 0, card.debt || 0);
+          card.debt = (card.debt || 0) - inst;
+          card.paidMonths = card.paidMonths || {};
+          card.paidMonths[ym] = { amount: r.amount, inst, accountId: null, accountName: r.accountName || '', at: entryDate, viaCsv: true };
+        }
       }
     } else {
       // expense / income → entries に追加
