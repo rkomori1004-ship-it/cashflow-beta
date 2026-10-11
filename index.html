@@ -6287,9 +6287,15 @@ function fmtShort(n) {
 function getDailyPL(year, month) {
   const days = new Date(year, month + 1, 0).getDate();
   const all = [...getEntries('personal', year, month), ...getEntries('business', year, month)];
-  const income = all.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
-  const perDay = income / days;
   const ym = `${year}-${String(month + 1).padStart(2, '0')}`;
+  // 収入：入金予定日（なければ発生日）がこの月のものを、記録した月に関係なく全部合計。日付がなければ記録した月で数える
+  let income = 0;
+  ['personal', 'business'].forEach(mode => Object.entries(state[mode].entries || {}).forEach(([k, arr]) => (arr || []).forEach(e => {
+    if (e.type !== 'income') return;
+    const when = e.dueDate || e.date;
+    if (when ? when.slice(0, 7) === ym : k === mkey(year, month)) income += e.amount;
+  })));
+  const perDay = income / days;
   const exp = {}; let undated = 0;
   let loanRepaid = 0;
   all.filter(e => e.type === 'expense').forEach(e => {
