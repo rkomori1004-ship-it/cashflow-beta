@@ -6288,14 +6288,22 @@ function getDailyPL(year, month) {
   const days = new Date(year, month + 1, 0).getDate();
   const all = [...getEntries('personal', year, month), ...getEntries('business', year, month)];
   const ym = `${year}-${String(month + 1).padStart(2, '0')}`;
-  // 収入：入金予定日（なければ発生日）がこの月のものを、記録した月に関係なく全部合計。日付がなければ記録した月で数える
-  let income = 0;
+  // 収入：業務委託（報酬・業務委託）は月の日数で均等に割る。それ以外は入金予定日（なければ発生日）の日にそのまま足す。
+  // 記録した月には関係なく、日付が当月のものを全部集める。日付がなければ記録した月の日割りに入れる
+  let spreadIncome = 0, lumpIncome = 0;
+  const lump = {};
   ['personal', 'business'].forEach(mode => Object.entries(state[mode].entries || {}).forEach(([k, arr]) => (arr || []).forEach(e => {
     if (e.type !== 'income') return;
     const when = e.dueDate || e.date;
-    if (when ? when.slice(0, 7) === ym : k === mkey(year, month)) income += e.amount;
+    const isContract = mode === 'business' && e.cat === '報酬・業務委託';
+    if (isContract) {
+      if (when ? when.slice(0, 7) === ym : k === mkey(year, month)) spreadIncome += e.amount;
+    } else if (when) {
+      if (when.slice(0, 7) === ym) { const d = parseInt(when.slice(8, 10)); lump[d] = (lump[d] || 0) + e.amount; lumpIncome += e.amount; }
+    } else if (k === mkey(year, month)) spreadIncome += e.amount;
   })));
-  const perDay = income / days;
+  const income = spreadIncome + lumpIncome;
+  const perDay = spreadIncome / days;
   const exp = {}; let undated = 0;
   let loanRepaid = 0;
   all.filter(e => e.type === 'expense').forEach(e => {
@@ -6317,9 +6325,9 @@ function getDailyPL(year, month) {
   for (let d = 1; d <= days; d++) {
     const key = `${ym}-${String(d).padStart(2, '0')}`;
     const spent = exp[d] || 0;
-    list.push({ d, key, dow: new Date(year, month, d).getDay(), spent, net: Math.round(perDay - spent), future: key > todayKey, incomes: incomeDays[d] || [] });
+    list.push({ d, key, dow: new Date(year, month, d).getDay(), spent, gain: lump[d] || 0, net: Math.round(perDay + (lump[d] || 0) - spent), future: key > todayKey, incomes: incomeDays[d] || [] });
   }
-  return { days, income, perDay, list, undated, loanRepaid };
+  return { days, income, spreadIncome, lumpIncome, perDay, list, undated, loanRepaid };
 }
 
 function renderDailyPL() {
@@ -6363,7 +6371,7 @@ function renderDailyPL() {
     }).join('');
     el.innerHTML = `
       <div class="pl-summary">
-        <div><div class="pl-k">1日あたりの収入</div><div class="pl-n">${fmt(pl.perDay)}</div><div class="pl-s">今月の収入 ${fmt(pl.income)} ÷ ${pl.days}日</div></div>
+        <div><div class="pl-k">1日あたりの収入（業務委託の日割り）</div><div class="pl-n">${fmt(pl.perDay)}</div><div class="pl-s">業務委託 ${fmt(pl.spreadIncome)} ÷ ${pl.days}日${pl.lumpIncome ? `　＋ その日の売上・収入 ${fmt(pl.lumpIncome)}` : ''}</div></div>
         <div><div class="pl-k">${pl.list.some(x => x.future) ? '今日までの合計' : '月の合計'}</div><div class="pl-n" style="color:${total >= 0 ? '#67e8f9' : '#fda4af'}">${total >= 0 ? '+' : '−'}${fmt(Math.abs(total))}</div><div class="pl-s">＋の日 ${plus}日 ／ −の日 ${minus}日</div></div>
       </div>
       <div class="pl-grid">
@@ -6371,7 +6379,7 @@ function renderDailyPL() {
         ${'<div></div>'.repeat(lead)}${pl.list.map(cell).join('')}
       </div>
       <div class="pl-detail" id="pl-detail-${mode}">日付をタップすると内訳が見られます</div>
-      <div class="pl-legend"><span><i style="background:${PL_POS}"></i>＋ 収入の日割りより使わなかった</span><span><i style="background:${PL_NEG}"></i>− 使いすぎた</span><span>💰 入金予定日</span></div>
+      <div class="pl-legend"><span><i style="background:${PL_POS}"></i>＋ 収入（日割り＋その日の売上）より使わなかった</span><span><i style="background:${PL_NEG}"></i>− 使いすぎた</span><span>💰 入金予定日</span></div>
       ${(() => { const all = pl.list.flatMap(x => x.incomes.map(i => ({ ...i, d: x.d }))); if (!all.length) return '';
         const sum = st => all.filter(i => i.status === st).reduce((s, i) => s + i.amount, 0);
         const parts = [['未請求', 'var(--gold)'], ['請求済', 'var(--mp)'], ['入金済', 'var(--green)']].filter(([st]) => sum(st)).map(([st, c]) => `<span style="color:${c}">${st} ${fmt(sum(st))}</span>`);
@@ -6394,7 +6402,7 @@ function showDailyPLDetail(btn, mode, d) {
   const stColor = { '未請求': 'var(--gold)', '請求済': 'var(--mp)', '入金済': 'var(--green)' };
   const incHtml = x.incomes.map(i => `<div>💰 ${String(i.name).replace(/</g, '&lt;')} <b style="font-family:var(--mono)">${fmt(i.amount)}</b> <span style="font-size:10px;padding:0 6px;border:1px solid ${stColor[i.status] || 'var(--border)'};color:${stColor[i.status] || 'var(--text-muted)'};border-radius:99px">${i.status}</span></div>`).join('');
   el.innerHTML = `<b>${month + 1}月${d}日（${['日', '月', '火', '水', '木', '金', '土'][x.dow]}）</b>　` +
-    (x.future ? '<span style="color:var(--text-hint)">これからの日</span>' : `収入の日割り ${fmt(pl.perDay)} − 支出 ${fmt(x.spent)} ＝ <b style="color:${x.net >= 0 ? '#67e8f9' : '#fda4af'}">${x.net >= 0 ? '+' : '−'}${fmt(Math.abs(x.net))}</b>`) +
+    (x.future ? '<span style="color:var(--text-hint)">これからの日</span>' : `収入の日割り ${fmt(pl.perDay)}${x.gain ? ` ＋ 売上・収入 ${fmt(x.gain)}` : ''} − 支出 ${fmt(x.spent)} ＝ <b style="color:${x.net >= 0 ? '#67e8f9' : '#fda4af'}">${x.net >= 0 ? '+' : '−'}${fmt(Math.abs(x.net))}</b>`) +
     (incHtml ? `<div style="margin-top:4px">${incHtml}</div>` : '');
 }
 
