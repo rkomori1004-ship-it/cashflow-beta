@@ -891,7 +891,7 @@ input[type=checkbox] { accent-color: #34d399; }
         <div class="field"><label>金額（円）</label><input id="p-exp-amount" type="number" placeholder="80000" oninput="updateAllocHint()" onkeydown="if(event.key==='Enter')addEntry('personal','expense')"></div>
         <div class="field"><label>カテゴリ</label>
           <select id="p-exp-cat" onchange="updateAllocHint()">
-            <option>家賃・住宅費</option><option>食費</option><option>光熱費</option><option>交通費</option><option>通信費</option><option>娯楽・外食</option><option>美容・理髪</option><option>医療・保険</option><option>教育</option><option>衣類</option><option>その他</option>
+            <option>家賃・住宅費</option><option>食費</option><option>日用品</option><option>光熱費</option><option>交通費</option><option>通信費</option><option>娯楽・外食</option><option>美容・理髪</option><option>医療・保険</option><option>教育</option><option>衣類</option><option>その他</option>
           </select>
         </div>
         <div class="field"><label>支払い方法</label>
@@ -1384,7 +1384,7 @@ input[type=checkbox] { accent-color: #34d399; }
       <div class="form-grid" style="grid-template-columns:1.2fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px">
         <div class="field"><label>カテゴリ</label>
           <select id="catbudget-cat">
-            <option>家賃・住宅費</option><option>食費</option><option>光熱費</option><option>交通費</option><option>通信費</option><option>娯楽・外食</option><option>美容・理髪</option><option>医療・保険</option><option>教育</option><option>衣類</option><option>その他</option>
+            <option>家賃・住宅費</option><option>食費</option><option>日用品</option><option>光熱費</option><option>交通費</option><option>通信費</option><option>娯楽・外食</option><option>美容・理髪</option><option>医療・保険</option><option>教育</option><option>衣類</option><option>その他</option>
           </select>
         </div>
         <div class="field"><label>上限（円）</label><input id="catbudget-amount" type="number" placeholder="30000"></div>
@@ -1637,7 +1637,7 @@ input[type=checkbox] { accent-color: #34d399; }
     <div class="modal-field"><label>金額（円）</label><input id="check-amount" type="number" placeholder="500"></div>
     <div class="modal-field"><label>カテゴリ</label>
       <select id="check-cat">
-        <option>食費</option><option>娯楽・外食</option><option>衣類</option><option>美容・理髪</option><option>その他</option>
+        <option>食費</option><option>日用品</option><option>娯楽・外食</option><option>衣類</option><option>美容・理髪</option><option>その他</option>
       </select>
     </div>
     <button class="csv-btn" onclick="runPurchaseCheck()" style="width:100%;justify-content:center;margin-bottom:12px">▶ 判定する</button>
@@ -6813,7 +6813,7 @@ async function hashPassphrase(pass) {
 
 const IMPORT_HASH_KEY = 'cf-import-hashes-v1';
 const GEMINI_KEY_LS = 'cf-gemini-key';
-const IMPORT_CATS = ['家賃・住宅費','食費','光熱費','交通費','通信費','娯楽・外食','美容・理髪','医療・保険','教育','衣類','その他'];
+const IMPORT_CATS = ['家賃・住宅費','食費','日用品','光熱費','交通費','通信費','娯楽・外食','美容・理髪','医療・保険','教育','衣類','その他'];
 const IMPORT_BIZ_CATS = ['家賃・地代','水道光熱費','通信費','ソフトウェア・SaaS','交通費','機材・備品','外注費','交際費','会議費','書籍・学習','健康投資','広告宣伝','その他経費'];
 
 // ---- Gemini APIキー管理 ----
